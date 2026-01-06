@@ -18,7 +18,7 @@ import FastImage from 'react-native-fast-image'; // ✅ Cached Image
 import { useContentStore } from '../store/useContentStore';
 
 const { width, height } = Dimensions.get('window');
-const BASE_URL = 'https://kiddo-learning-backend.onrender.com';
+const BASE_URL = 'https://kiddsapp-backend.tecobit.cloud';
 const CACHE_KEY = 'FRUITS_CACHE';
 
 const shuffle = (arr: any[]) => {

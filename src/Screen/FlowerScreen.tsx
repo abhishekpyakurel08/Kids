@@ -25,7 +25,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import { useContentStore } from '../store/useContentStore';
 
-const BASE_URL = 'https://kiddo-learning-backend.onrender.com';
+const BASE_URL = 'https://kiddsapp-backend.tecobit.cloud';
 const formatUrl = (url?: string) => (url ? `${BASE_URL}/${url}` : undefined);
 
 // ---------- Animated Star ----------

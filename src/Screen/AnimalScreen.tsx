@@ -6,7 +6,7 @@ import {
 import Sound from 'react-native-sound';
 import { useContentStore } from '../store/useContentStore';
 
-const BASE_URL = 'https://kiddo-learning-backend.onrender.com';
+const BASE_URL = 'https://kiddsapp-backend.tecobit.cloud';
 
 const AnimalSoundScreen = () => {
   const { items, loading, fetchByType, fetchMore } = useContentStore();
