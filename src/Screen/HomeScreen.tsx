@@ -38,6 +38,7 @@ const STRINGS = {
   Shapes: 'Shapes',
   Animals: 'Animals',
   Fruits: 'Fruits',
+  Flower: 'Flower'
 } as const;
 
 const CARDS = [
@@ -47,8 +48,8 @@ const CARDS = [
   { key: 'Alphabet', color: '#FF5E5E', image: require('../assets/images/abc.jpeg'), route: 'Alphabet' },
   { key: 'Colors', color: '#A18CD1', image: require('../assets/images/color.jpeg'), route: 'Colors' },
   { key: 'Shapes', color: '#FAD02E', image: require('../assets/images/shapes.png'), route: 'Shapes' },
-];
-
+  { key: 'Flower', color: '#FFB347', image: require('../assets/images/shapes.png'), route: 'Flower' },
+]
 // --- COMPONENTS ---
 
 const AnimatedCard = ({ item, index, numColumns }: any) => {
@@ -145,25 +146,7 @@ export default function HomeScreen() {
         <Ionicons name="settings" size={28} color="#94A3B8" />
       </TouchableOpacity>
 
-      {/* Parents Modal */}
-      {/* <Modal transparent visible={modalVisible} animationType="fade">
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalContainer}>
-            <Text style={styles.modalTitle}>🔒 Parents Only</Text>
-            <Text style={styles.modalSubtitle}>What is 5 + 3?</Text>
-            <TextInput
-              style={styles.modalInput}
-              keyboardType="numeric"
-              value={inputValue}
-              onChangeText={setInputValue}
-              placeholder="?"
-            />
-            <TouchableOpacity style={styles.okButton} onPress={handleConfirmParents}>
-              <Text style={styles.okButtonText}>Confirm</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal> */}
+   
     </SafeAreaView>
   );
 }

@@ -80,7 +80,7 @@ const FruitScreen = ({ navigation }: any) => {
   const onMatchSuccess = () => {
     if (!currentFruit || fruits.length === 0) return;
     Tts.stop();
-    Tts.speak(`Yummy! ${currentFruit.title}`);
+    Tts.speak(`Correct! ${currentFruit.title}`);
     setShowConfetti(true);
 
     setTimeout(() => {

@@ -3,7 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 
-export const API_URL = 'https://kiddsapp-backend.tecobit.cloud/api/v1/content';
+export const API_URL = 'https://kiddsapp-backend.tecobit.cloud/api/v1/content/';
 const CACHE_PREFIX = 'CONTENT_CACHE_';
 
 export interface ContentItem {
