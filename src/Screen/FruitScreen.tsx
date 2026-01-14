@@ -1,201 +1,183 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   Dimensions,
-  SafeAreaView,
   TouchableOpacity,
+  ActivityIndicator,
+  StatusBar,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import NetInfo from '@react-native-community/netinfo';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { GestureHandlerRootView, PanGestureHandler } from 'react-native-gesture-handler';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, runOnJS } from 'react-native-reanimated';
+import FastImage from 'react-native-fast-image';
 import Tts from 'react-native-tts';
-import ConfettiCannon from 'react-native-confetti-cannon';
-import { Home } from 'lucide-react-native';
-import FastImage from 'react-native-fast-image'; // ✅ Cached Image
+import Orientation from 'react-native-orientation-locker';
 import { useContentStore } from '../store/useContentStore';
 
 const { width, height } = Dimensions.get('window');
 const BASE_URL = 'https://kiddsapp-backend.tecobit.cloud';
-const CACHE_KEY = 'FRUITS_CACHE';
 
-const shuffle = (arr: any[]) => {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-};
-
-const FruitScreen = ({ navigation }: any) => {
+export default function FruitScreen({ navigation }: any) {
   const { items, loading, fetchByType } = useContentStore();
   const [fruits, setFruits] = useState<any[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [showConfetti, setShowConfetti] = useState(false);
-  const [offline, setOffline] = useState(false);
+  const [index, setIndex] = useState(0);
 
   const translateX = useSharedValue(0);
-  const translateY = useSharedValue(0);
-  const scale = useSharedValue(1);
 
-  // --- Load fruits ---
-  const loadFruits = async () => {
-    const state = await NetInfo.fetch();
-    if (state.isConnected) {
-      await fetchByType('fruit', true);
-      setOffline(false);
-    } else {
-      setOffline(true);
-      const cached = await AsyncStorage.getItem(CACHE_KEY);
-      if (cached) setFruits(JSON.parse(cached));
-    }
-  };
+  // Dynamic emoji size
+  const EMOJI_SIZE = Math.min(width, height) * 0.25;
 
   useEffect(() => {
-    loadFruits();
-    return () => Tts.stop();
+    Orientation.lockToLandscape();
+    fetchByType('fruit', true);
+    return () => Orientation.unlockAllOrientations();
   }, []);
 
   useEffect(() => {
-    if (items && items.length) {
-      const shuffled = shuffle(items);
-      setFruits(shuffled);
-      AsyncStorage.setItem(CACHE_KEY, JSON.stringify(shuffled)).catch(console.log);
-      setCurrentIndex(0);
+    if (items?.length) {
+      setFruits(items);
+      setIndex(0);
     }
   }, [items]);
 
-  const currentFruit = fruits[currentIndex];
+  const currentFruit = fruits[index];
 
   useEffect(() => {
-    if (!currentFruit) return;
-    Tts.stop();
-    Tts.setDefaultRate(0.45);
-    Tts.speak(`Match the ${currentFruit.title}`);
-  }, [currentFruit?._id]);
-
-  const onMatchSuccess = () => {
-    if (!currentFruit || fruits.length === 0) return;
-    Tts.stop();
-    Tts.speak(`Correct! ${currentFruit.title}`);
-    setShowConfetti(true);
-
-    setTimeout(() => {
-      setShowConfetti(false);
-      setCurrentIndex((prev) => (prev + 1 < fruits.length ? prev + 1 : 0));
-      translateX.value = withSpring(0);
-      translateY.value = withSpring(0);
-      scale.value = withSpring(1);
-    }, 1200);
-  };
-
-  const onGestureEnd = (event: any) => {
-    if (event.nativeEvent.translationY > height * 0.25) runOnJS(onMatchSuccess)();
-    else {
-      translateX.value = withSpring(0);
-      translateY.value = withSpring(0);
-      scale.value = withSpring(1);
+    if (currentFruit) {
+      Tts.stop();
+      Tts.speak(currentFruit.title);
     }
+  }, [index, currentFruit]);
+
+  const next = () => setIndex(i => (i + 1) % fruits.length);
+  const prev = () => setIndex(i => (i - 1 + fruits.length) % fruits.length);
+
+  const onSwipeEnd = (e: any) => {
+    if (e.nativeEvent.translationX < -50) runOnJS(next)();
+    if (e.nativeEvent.translationX > 50) runOnJS(prev)();
+    translateX.value = withSpring(0);
   };
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: translateX.value },
-      { translateY: translateY.value },
-      { scale: scale.value },
-    ],
+  const animStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }],
   }));
 
-  if ((loading && !fruits.length) || !currentFruit) {
+  const isEmoji = currentFruit?.imageUrl?.length <= 2;
+
+  const imageUrl = currentFruit?.imageUrl
+    ? currentFruit.imageUrl.startsWith('http')
+      ? currentFruit.imageUrl
+      : `${BASE_URL}/uploads/${currentFruit.imageUrl}`
+    : null;
+
+  if (loading || !currentFruit) {
     return (
       <View style={styles.center}>
-        <Text style={styles.loadingText}>
-          {offline ? 'Offline mode: Loading cached fruits...' : 'Loading fruits...'}
-        </Text>
+        <ActivityIndicator size="large" color="#fff" />
       </View>
     );
   }
 
-  const isEmoji = (v?: string) => v && /\p{Emoji}/u.test(v);
-  const normalizeUrl = (url?: string) => {
-    if (!url) return null;
-    if (url.startsWith('http')) return url;
-    if (url.startsWith('/uploads')) return `${BASE_URL}${url}`;
-    if (url.startsWith('uploads/')) return `${BASE_URL}/${url}`;
-    return `${BASE_URL}/uploads/${url}`;
-  };
-  const imageUrl = normalizeUrl(currentFruit?.imageUrl);
-
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaView style={styles.container}>
-        {showConfetti && <ConfettiCannon count={80} origin={{ x: width / 2, y: 0 }} />}
-        <Text style={styles.title}>🍓  Match Game 🍌 {offline && '(Offline)'}</Text>
+        <StatusBar hidden />
 
-        <View style={styles.sourceArea}>
-          <PanGestureHandler
-            onGestureEvent={(e) => {
-              translateX.value = e.nativeEvent.translationX;
-              translateY.value = e.nativeEvent.translationY;
-            }}
-            onEnded={onGestureEnd}
-          >
-            <Animated.View style={[styles.fruitBubble, animatedStyle]}>
-              {isEmoji(currentFruit.imageUrl) ? (
-                <Text style={styles.emojiText}>{currentFruit.imageUrl}</Text>
-              ) : imageUrl ? (
+        {/* LEFT ARROW */}
+        <TouchableOpacity style={[styles.arrow, { left: 30 }]} onPress={prev}>
+          <Text style={styles.arrowText}>◀</Text>
+        </TouchableOpacity>
+
+        {/* RIGHT ARROW */}
+        <TouchableOpacity style={[styles.arrow, { right: 30 }]} onPress={next}>
+          <Text style={styles.arrowText}>▶</Text>
+        </TouchableOpacity>
+
+        {/* SWIPE GESTURE */}
+        <PanGestureHandler
+          onGestureEvent={(e) => (translateX.value = e.nativeEvent.translationX)}
+          onEnded={onSwipeEnd}
+        >
+          <Animated.View style={[styles.fruitWrapper, animStyle]}>
+            {isEmoji ? (
+              <Text style={[styles.emoji, { fontSize: EMOJI_SIZE }]}>{currentFruit.imageUrl}</Text>
+            ) : (
+              imageUrl && (
                 <FastImage
-                  source={{ uri: imageUrl, priority: FastImage.priority.high }}
-                  style={styles.fruitImage}
+                  source={{ uri: imageUrl, cache: FastImage.cacheControl.web }}
+                  style={styles.image}
                   resizeMode={FastImage.resizeMode.contain}
                 />
-              ) : (
-                <Text style={styles.fallback}>❓</Text>
-              )}
-            </Animated.View>
-          </PanGestureHandler>
-        </View>
+              )
+            )}
+          </Animated.View>
+        </PanGestureHandler>
 
-        <View style={styles.targetArea}>
-          <Text style={styles.dropText}>Drop Here!</Text>
-          <View style={styles.labelContainer}>
-            <Text style={styles.fruitName}>{currentFruit.title.toUpperCase()}</Text>
-          </View>
+        {/* BOTTOM LABEL */}
+        <View style={styles.label}>
+          <Text style={styles.labelText}>{currentFruit.title.toUpperCase()}</Text>
         </View>
-
-        <TouchableOpacity style={styles.homeBtn} onPress={() => navigation.goBack()}>
-          <Home color="#FFF" size={30} />
-        </TouchableOpacity>
       </SafeAreaView>
     </GestureHandlerRootView>
   );
-};
-
-export default FruitScreen;
+}
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#A7F3D0', alignItems: 'center' },
-  center: { flex: 1, backgroundColor: '#A7F3D0', justifyContent: 'center', alignItems: 'center' },
-  loadingText: { color: '#065F46', fontSize: 24, fontWeight: 'bold' },
-  title: { fontSize: 38, fontWeight: '900', color: '#065F46', marginTop: 30 },
-  sourceArea: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  fruitBubble: {
-    width: 160, height: 160, backgroundColor: '#FDE68A', borderRadius: 80,
-    justifyContent: 'center', alignItems: 'center', borderWidth: 6, borderColor: '#F59E0B',
+  container: {
+    flex: 1,
+    backgroundColor: '#87CEFA',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  fruitImage: { width: 110, height: 110 },
-  emojiText: { fontSize: 90 },
-  fallback: { fontSize: 60 },
-  targetArea: {
-    width: width * 0.85, height: 180, borderRadius: 50, borderStyle: 'dashed',
-    borderWidth: 5, borderColor: '#10B981', justifyContent: 'center', alignItems: 'center',
-    marginBottom: 80, backgroundColor: '#ECFDF5',
+  center: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#87CEFA',
   },
-  dropText: { fontSize: 22, fontWeight: '900', color: '#10B981', marginBottom: 10 },
-  labelContainer: { paddingHorizontal: 40, paddingVertical: 14, backgroundColor: '#34D399', borderRadius: 30 },
-  fruitName: { fontSize: 34, fontWeight: '900', color: '#064E3B' },
-  homeBtn: { position: 'absolute', bottom: 25, left: 20, backgroundColor: '#F97316', padding: 18, borderRadius: 40 },
+  fruitWrapper: {
+    width: 350,
+    height: 350,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  image: {
+    width: '100%',
+    height: '100%',
+  },
+  emoji: {
+    textAlign: 'center',
+  },
+  label: {
+    position: 'absolute',
+    bottom: 40,
+    backgroundColor: '#E11D48',
+    paddingHorizontal: 60,
+    paddingVertical: 18,
+    borderRadius: 40,
+  },
+  labelText: {
+    color: '#fff',
+    fontSize: 28,
+    fontWeight: '900',
+    letterSpacing: 2,
+  },
+  arrow: {
+    position: 'absolute',
+    top: '50%',
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: '#FBBF24',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  arrowText: {
+    fontSize: 32,
+    fontWeight: '900',
+    color: '#fff',
+  },
 });

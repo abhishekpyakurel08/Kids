@@ -7,48 +7,71 @@ import Svg, {
   Defs,
   LinearGradient,
   Stop,
-  Filter,
 } from 'react-native-svg';
 
+// Define the size presets outside the component to help TS inference
+const SIZE_PRESETS = {
+  sm: 80,
+  md: 160,
+  lg: 240,
+  xl: 320,
+};
+
 interface MascotProps {
-  size?: 'sm' | 'md' | 'lg' | 'xl';
+  size?: keyof typeof SIZE_PRESETS | number;
   animate?: 'float' | 'bounce' | 'wave' | 'none';
 }
 
 const Mascot: React.FC<MascotProps> = ({ size = 'md', animate = 'float' }) => {
-  const scaleAnim = useRef(new Animated.Value(1)).current;
   const translateY = useRef(new Animated.Value(0)).current;
 
-  const sizes = {
-    sm: 80,
-    md: 160,
-    lg: 240,
-    xl: 320,
-  };
+  // Resolve size: if it's a number, use it; if it's a key, look it up
+  const finalSize = typeof size === 'number' ? size : SIZE_PRESETS[size];
 
   useEffect(() => {
+    // Reset position before starting new animation
+    translateY.setValue(0);
+
     if (animate === 'bounce') {
       Animated.loop(
         Animated.sequence([
-          Animated.timing(translateY, { toValue: -15, duration: 600, useNativeDriver: true }),
-          Animated.timing(translateY, { toValue: 0, duration: 600, useNativeDriver: true }),
+          Animated.timing(translateY, { 
+            toValue: -15, 
+            duration: 600, 
+            useNativeDriver: true 
+          }),
+          Animated.timing(translateY, { 
+            toValue: 0, 
+            duration: 600, 
+            useNativeDriver: true 
+          }),
         ])
       ).start();
     } else if (animate === 'float') {
       Animated.loop(
         Animated.sequence([
-          Animated.timing(translateY, { toValue: -10, duration: 2000, useNativeDriver: true }),
-          Animated.timing(translateY, { toValue: 0, duration: 2000, useNativeDriver: true }),
+          Animated.timing(translateY, { 
+            toValue: -10, 
+            duration: 2000, 
+            useNativeDriver: true 
+          }),
+          Animated.timing(translateY, { 
+            toValue: 0, 
+            duration: 2000, 
+            useNativeDriver: true 
+          }),
         ])
       ).start();
+    } else {
+      translateY.stopAnimation();
     }
-  }, [animate]);
+  }, [animate, translateY]);
 
   return (
     <Animated.View
       style={{
-        width: sizes[size],
-        height: sizes[size],
+        width: finalSize,
+        height: finalSize,
         transform: [{ translateY }],
       }}
     >
@@ -94,14 +117,30 @@ const Mascot: React.FC<MascotProps> = ({ size = 'md', animate = 'float' }) => {
         <Ellipse cx="100" cy="88" rx="6" ry="4" fill="hsl(0,70%,65%)" />
 
         {/* Mouth */}
-        <Path d="M92 95 Q100 102 108 95" stroke="hsl(230,50%,12%)" strokeWidth="2" fill="none" />
+        <Path 
+          d="M92 95 Q100 102 108 95" 
+          stroke="hsl(230,50%,12%)" 
+          strokeWidth="2" 
+          fill="none" 
+        />
 
         {/* Cheeks */}
-        <Ellipse cx="65" cy="85" rx="8" ry="6" fill="url(#cheekGradient)" opacity={0.7} />
-        <Ellipse cx="135" cy="85" rx="8" ry="6" fill="url(#cheekGradient)" opacity={0.7} />
+        <Ellipse 
+          cx="65" cy="85" rx="8" ry="6" 
+          fill="url(#cheekGradient)" opacity={0.7} 
+        />
+        <Ellipse 
+          cx="135" cy="85" rx="8" ry="6" 
+          fill="url(#cheekGradient)" opacity={0.7} 
+        />
 
         {/* Tail */}
-        <Path d="M145 150 Q180 140 175 100 Q170 85 160 90" stroke="url(#bodyGradient)" strokeWidth={18} fill="none" />
+        <Path 
+          d="M145 150 Q180 140 175 100 Q170 85 160 90" 
+          stroke="url(#bodyGradient)" 
+          strokeWidth={18} 
+          fill="none" 
+        />
         <Circle cx="162" cy="95" r="10" fill="url(#bellyGradient)" />
 
         {/* Star on forehead */}

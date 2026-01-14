@@ -1,297 +1,213 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  Vibration,
-  Platform,
-  FlatList,
   SafeAreaView,
-  useWindowDimensions,
+  StatusBar,
+  Dimensions,
 } from 'react-native';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-  withSequence,
-  withTiming,
-  withRepeat,
-  BounceIn,
-} from 'react-native-reanimated';
+import PagerView from 'react-native-pager-view';
 import Tts from 'react-native-tts';
-import { Palette, Sparkles, Trophy } from 'lucide-react-native';
+import { ChevronLeft, ChevronRight, XCircle, Gamepad2, Zap } from 'lucide-react-native';
+
+const { width, height } = Dimensions.get('window');
 
 const COLOR_DATA = [
-  { id: '1', name: 'Red', hex: '#FF5E5E' },
-  { id: '2', name: 'Blue', hex: '#4facfe' },
-  { id: '3', name: 'Green', hex: '#48BB78' },
-  { id: '4', name: 'Yellow', hex: '#FAD02E' },
-  { id: '5', name: 'Purple', hex: '#A18CD1' },
-  { id: '6', name: 'Orange', hex: '#F6AD55' },
-  { id: '7', name: 'Pink', hex: '#F687B3' },
-  { id: '8', name: 'White', hex: '#FFFFFF' },
-  { id: '9', name: 'Cyan', hex: '#22D3EE' },
-  { id: '10', name: 'Lime', hex: '#A3E635' },
-  { id: '11', name: 'Teal', hex: '#14B8A6' },
-  { id: '12', name: 'Magenta', hex: '#D946EF' },
-  { id: '13', name: 'Indigo', hex: '#6366F1' },
-  { id: '14', name: 'Brown', hex: '#A0522D' },
-  { id: '15', name: 'Gray', hex: '#9CA3AF' },
-  { id: '16', name: 'Black', hex: '#000000' },
+ { id: '1', name: 'Red', hex: '#FF3B30' },
+  { id: '2', name: 'Blue', hex: '#007AFF' },
+  { id: '3', name: 'Green', hex: '#34C759' },
+  { id: '4', name: 'Yellow', hex: '#FFCC00' },
+  { id: '5', name: 'Orange', hex: '#FF9500' },
+  { id: '6', name: 'Purple', hex: '#AF52DE' },
+  { id: '7', name: 'Pink', hex: '#FF2D55' },
+  { id: '8', name: 'Brown', hex: '#8E6E53' },
+  { id: '9', name: 'Black', hex: '#1C1C1E' },
+  { id: '10', name: 'White', hex: '#FFFFFF' },
+  { id: '11', name: 'Gray', hex: '#8E8E93' },
+  { id: '12', name: 'Cyan', hex: '#32ADE6' },
 ];
 
-const getContrastColor = (hex: string) => {
-  const c = hex.substring(1);
-  const r = parseInt(c.substr(0, 2), 16);
-  const g = parseInt(c.substr(2, 2), 16);
-  const b = parseInt(c.substr(4, 2), 16);
-  const brightness = (r * 299 + g * 587 + b * 114) / 1000;
-  return brightness > 180 ? '#1E293B' : '#FFF';
-};
-
-const ColorCard = ({ item, index, numColumns, onTap, disabled }: any) => {
-  const { width } = useWindowDimensions();
-  const scale = useSharedValue(1);
-  const translateY = useSharedValue(0);
-  const spacing = 16;
-  const itemWidth = (width - spacing * (numColumns + 1)) / numColumns;
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }, { translateY: translateY.value }],
-  }));
-
-  const handlePress = () => {
-    if (disabled) return;
-    if (Platform.OS === 'android') Vibration.vibrate(15);
-    scale.value = withSequence(withSpring(1.1), withSpring(1));
-    Tts.stop();
-    Tts.speak(item.name);
-    onTap(item);
-  };
-
-  return (
-    <Animated.View
-      entering={BounceIn.delay(index * 50)}
-      style={[styles.cardWrapper, { width: itemWidth }, animatedStyle]}
-    >
-      <TouchableOpacity
-        activeOpacity={1}
-        onPressIn={() => {
-          if (disabled) return;
-          scale.value = withSpring(0.92);
-          translateY.value = withSpring(6);
-        }}
-        onPressOut={() => {
-          if (disabled) return;
-          scale.value = withSpring(1);
-          translateY.value = withSpring(0);
-        }}
-        onPress={handlePress}
-        style={[
-          styles.cardMain,
-          { backgroundColor: item.hex, opacity: disabled ? 0.6 : 1 },
-        ]}
-      >
-        <Text style={[styles.colorName, { color: getContrastColor(item.hex) }]}>
-          {item.name}
-        </Text>
-      </TouchableOpacity>
-      <View style={[styles.cardDepth, { backgroundColor: item.hex, opacity: 0.6 }]} />
-    </Animated.View>
-  );
-};
-
-export default function ColorMatchingGame() {
-  const { width, height } = useWindowDimensions();
-  const numColumns = width > height ? (width > 768 ? 4 : 3) : 2;
-
-  // FIXED: Converted bgTranslate to useSharedValue for Reanimated compatibility
-  const bgTranslate = useSharedValue(0);
-  const bgColor = useSharedValue('#1E293B');
-  
-  const [targetColor, setTargetColor] = useState<any>(null);
-  const [sparkles, setSparkles] = useState<any[]>([]);
-  const [disabled, setDisabled] = useState(false);
-  const [shuffledColors, setShuffledColors] = useState(COLOR_DATA);
-  const [score, setScore] = useState(0);
+export default function ColorSwipeGame() {
+  const pagerRef = useRef<PagerView>(null);
+  const [currentPage, setCurrentPage] = useState(0);
 
   useEffect(() => {
-    Tts.setDefaultRate(0.5);
-    pickNextTarget();
-
-    // FIXED: Loop background translation using Reanimated logic
-    bgTranslate.value = withRepeat(
-      withSequence(
-        withTiming(-20, { duration: 4000 }),
-        withTiming(0, { duration: 4000 })
-      ),
-      -1,
-      false
-    );
+    Tts.getInitStatus().then(() => {
+      Tts.setDefaultRate(0.5);
+      Tts.setDefaultPitch(1.2);
+      Tts.speak(COLOR_DATA[0].name);
+    });
+    return () => Tts.stop();
   }, []);
 
-  const bgAnimatedStyle = useAnimatedStyle(() => ({
-    backgroundColor: bgColor.value,
-    transform: [{ translateY: bgTranslate.value }],
-  }));
-
-  const pickNextTarget = () => {
-    const next = COLOR_DATA[Math.floor(Math.random() * COLOR_DATA.length)];
-    setTargetColor(next);
-    setShuffledColors((prev) => [...prev].sort(() => Math.random() - 0.5));
-    bgColor.value = withTiming(next.hex, { duration: 500 });
+  // Helper function to ensure voice and state stay synced
+  const handleColorSpeech = (index: number) => {
     Tts.stop();
-    Tts.speak(`Find the color ${next.name}`);
+    Tts.speak(COLOR_DATA[index].name);
   };
 
-  const handleColorTap = (item: any) => {
-    if (item.id === targetColor.id) {
-      setScore(s => s + 1);
-      setDisabled(true);
-      triggerSparkle();
-      Tts.speak("Great job!");
-      setTimeout(() => {
-        pickNextTarget();
-        setDisabled(false);
-      }, 800);
-    } else {
-      if (Platform.OS === 'android') Vibration.vibrate(100);
-      Tts.speak(`That is ${item.name}. Try to find ${targetColor.name}`);
+  const onPageSelected = (e: { nativeEvent: { position: number } }) => {
+    const index = e.nativeEvent.position;
+    // Only speak if the page index actually changed (prevents double-speak on some devices)
+    if (index !== currentPage) {
+      setCurrentPage(index);
+      handleColorSpeech(index);
     }
   };
 
-  const triggerSparkle = () => {
-    const newSparkle = {
-      id: Date.now(),
-      color: '#FFD700',
-      top: Math.random() * (height * 0.5),
-      left: Math.random() * (width - 100),
-      size: Math.random() * 40 + 30,
-    };
-    setSparkles((prev) => [...prev, newSparkle]);
-    setTimeout(() => {
-      setSparkles((prev) => prev.filter((s) => s.id !== newSparkle.id));
-    }, 1000);
+  const movePage = (dir: 'next' | 'prev') => {
+    const nextIndex = dir === 'next' ? currentPage + 1 : currentPage - 1;
+    if (nextIndex >= 0 && nextIndex < COLOR_DATA.length) {
+      // 1. Update state immediately for the UI
+      setCurrentPage(nextIndex);
+      // 2. Animate the pager
+      pagerRef.current?.setPage(nextIndex);
+      // 3. Speak the color of the new index
+      handleColorSpeech(nextIndex);
+    }
   };
 
   return (
     <View style={styles.container}>
-      {/* FIXED: Using Animated.View from Reanimated to match bgAnimatedStyle */}
-      <Animated.View style={[StyleSheet.absoluteFillObject, bgAnimatedStyle]} />
+      <StatusBar hidden />
       
+      {/* Notebook Grid Background */}
+      <View style={styles.gridContainer}>
+        {[...Array(20)].map((_, i) => (
+          <View key={`v-${i}`} style={[styles.gridLineV, { left: i * 40 }]} />
+        ))}
+        {[...Array(30)].map((_, i) => (
+          <View key={`h-${i}`} style={[styles.gridLineH, { top: i * 40 }]} />
+        ))}
+      </View>
+
       <SafeAreaView style={styles.safeArea}>
-        {/* Score Bar */}
-        <View style={styles.scoreBar}>
-          <Trophy color="#FFD700" size={24} />
-          <Text style={styles.scoreText}>{score}</Text>
+        <View style={styles.topBar}>
+          <View style={styles.headerLeft}>
+            <TouchableOpacity style={[styles.iconBtn, { backgroundColor: '#FFB800' }]}>
+              <Zap color="white" fill="white" size={24} />
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.iconBtn, { backgroundColor: '#FF4B4B', marginLeft: 15 }]}>
+              <Gamepad2 color="white" size={24} />
+            </TouchableOpacity>
+          </View>
+          <TouchableOpacity activeOpacity={0.7}>
+            <XCircle color="#FF4D00" size={50} fill="white" />
+          </TouchableOpacity>
         </View>
 
-        <View style={StyleSheet.absoluteFill} pointerEvents="none">
-          {sparkles.map((s) => (
-            <Sparkles
-              key={s.id}
-              size={s.size}
-              color={s.color}
-              style={{ position: 'absolute', top: s.top, left: s.left }}
-              opacity={1}
-            />
-          ))}
-        </View>
+        <View style={styles.gameEngine}>
+          {/* Left Arrow Button */}
+          <TouchableOpacity 
+            onPress={() => movePage('prev')}
+            disabled={currentPage === 0}
+            style={[styles.navArrow, { opacity: currentPage === 0 ? 0 : 1 }]}
+          >
+            <View style={styles.arrowBase}>
+               <ChevronLeft color="#8D6E63" size={45} strokeWidth={4} />
+            </View>
+          </TouchableOpacity>
 
-        <View style={styles.header}>
-          <Palette color="#FFF" size={32} style={{ marginBottom: 10 }} />
-          <Text style={styles.headerTitle}>Match This Color:</Text>
-          {targetColor && (
-            <Text style={[styles.targetColorText, { color: getContrastColor(targetColor.hex) }]}>
-              {targetColor.name}
-            </Text>
-          )}
-        </View>
+          <PagerView 
+            ref={pagerRef}
+            style={styles.pager} 
+            initialPage={0}
+            onPageSelected={onPageSelected}
+          >
+            {COLOR_DATA.map((item) => (
+              <View key={item.id} style={styles.cardWrapper}>
+                <View style={styles.cardDepthShadow} />
+                <View style={styles.mainFlashcard}>
+                  <View style={[styles.colorBlock, { backgroundColor: item.hex }]} />
+                  <View style={styles.labelBlock}>
+                    <Text style={styles.colorLabelText}>{item.name}</Text>
+                  </View>
+                </View>
+              </View>
+            ))}
+          </PagerView>
 
-        <FlatList
-          data={shuffledColors}
-          key={numColumns}
-          numColumns={numColumns}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-          renderItem={({ item, index }) => (
-            <ColorCard
-              item={item}
-              index={index}
-              numColumns={numColumns}
-              onTap={handleColorTap}
-              disabled={disabled}
-            />
-          )}
-        />
+          {/* Right Arrow Button */}
+          <TouchableOpacity 
+             onPress={() => movePage('next')}
+             disabled={currentPage === COLOR_DATA.length - 1}
+             style={[styles.navArrow, { opacity: currentPage === COLOR_DATA.length - 1 ? 0 : 1 }]}
+          >
+            <View style={styles.arrowBase}>
+              <ChevronRight color="#8D6E63" size={45} strokeWidth={4} />
+            </View>
+          </TouchableOpacity>
+        </View>
       </SafeAreaView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: { flex: 1, backgroundColor: '#F8FAFF' },
   safeArea: { flex: 1 },
-  scoreBar: {
+  gridContainer: { ...StyleSheet.absoluteFillObject, opacity: 0.15 },
+  gridLineV: { position: 'absolute', width: 1, height: '100%', backgroundColor: '#CBD5E1' },
+  gridLineH: { position: 'absolute', height: 1, width: '100%', backgroundColor: '#CBD5E1' },
+  topBar: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    paddingHorizontal: 20,
-    paddingTop: 10,
-  },
-  scoreText: {
-    fontSize: 24,
-    fontWeight: '900',
-    color: '#FFF',
-    marginLeft: 8,
-  },
-  header: { paddingVertical: 20, alignItems: 'center' },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#FFF',
-    textShadowColor: 'rgba(0,0,0,0.5)',
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 3,
-  },
-  targetColorText: {
-    fontSize: 40,
-    fontWeight: '900',
-    marginTop: 5,
-    textTransform: 'uppercase',
-    textShadowColor: 'rgba(0,0,0,0.3)',
-    textShadowOffset: { width: 2, height: 2 },
-    textShadowRadius: 4,
-  },
-  listContent: { paddingHorizontal: 16, paddingBottom: 40 },
-  cardWrapper: {
-    height: 140,
-    marginVertical: 10,
-    marginHorizontal: 6,
+    justifyContent: 'space-between',
+    paddingHorizontal: 25,
+    paddingTop: 15,
     alignItems: 'center',
   },
-  cardMain: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 30,
+  headerLeft: { flexDirection: 'row' },
+  iconBtn: {
+    width: 55,
+    height: 55,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    zIndex: 2,
-    borderWidth: 3,
-    borderColor: 'rgba(255,255,255,0.3)',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 2 },
   },
-  cardDepth: {
+  gameEngine: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 15,
+  },
+  pager: { flex: 1, height: height * 0.75 },
+  cardWrapper: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  cardDepthShadow: {
     position: 'absolute',
-    bottom: -8,
-    width: '100%',
-    height: '100%',
-    borderRadius: 30,
-    zIndex: 1,
+    width: width * 0.62,
+    height: height * 0.65,
+    backgroundColor: '#DDE4ED',
+    borderRadius: 35,
+    transform: [{ translateY: 12 }, { translateX: 6 }],
   },
-  colorName: {
-    fontSize: 18,
-    fontWeight: '900',
-    textTransform: 'uppercase',
+  mainFlashcard: {
+    width: width * 0.62,
+    height: height * 0.65,
+    backgroundColor: 'white',
+    borderRadius: 35,
+    padding: 15,
+    borderWidth: 1.5,
+    borderColor: '#F1F5F9',
   },
+  colorBlock: { flex: 3.2, borderRadius: 25 },
+  labelBlock: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  colorLabelText: { fontSize: 50, fontWeight: '900', color: '#1E293B', letterSpacing: 1 },
+  navArrow: { width: 65, height: 65, justifyContent: 'center', alignItems: 'center' },
+  arrowBase: {
+    backgroundColor: '#F3E5D8',
+    padding: 10,
+    borderRadius: 20,
+    borderBottomWidth: 8,
+    borderBottomColor: '#D7BCA3',
+    borderRightWidth: 3,
+    borderRightColor: '#D7BCA3',
+  }
 });

@@ -3,173 +3,198 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 
+// ---------------- Backend API ----------------
 export const API_URL = 'https://kiddsapp-backend.tecobit.cloud/api/v1/content/';
 const CACHE_PREFIX = 'CONTENT_CACHE_';
+const CACHE_INDEX_KEY = 'CACHE_INDEX';
+const MAX_CACHE_MB = 50;
+const MAX_CACHE_BYTES = MAX_CACHE_MB * 1024 * 1024;
 
+// ---------------- Types ----------------
 export interface ContentItem {
   _id: string;
-  type: 'math' | 'letter' | 'animal' | 'number' | 'vegetable' | 'fruit';
+  type:
+    | 'letter' | 'number' | 'animal' | 'fruit' | 'flower' | 'vegetable'
+    | 'addition' | 'subtraction' | 'multiplication' | 'division'
+    | 'bird' | 'insect';
   title: string;
   imageUrl: string;
   soundUrl?: string;
   question?: string;
   options?: string[];
   correctAnswer?: string;
+  value?: string | number;
+  valueName?: string;
 }
 
+type CacheEntry = { size: number; lastAccess: number };
+type CacheIndex = { totalSize: number; files: Record<string, CacheEntry> };
+
+// ---------------- Cache Helpers ----------------
+async function loadCacheIndex(): Promise<CacheIndex> {
+  const raw = await AsyncStorage.getItem(CACHE_INDEX_KEY);
+  return raw ? JSON.parse(raw) : { totalSize: 0, files: {} };
+}
+
+async function saveCacheIndex(index: CacheIndex) {
+  await AsyncStorage.setItem(CACHE_INDEX_KEY, JSON.stringify(index));
+}
+
+async function registerCache(id: string, size: number) {
+  const index = await loadCacheIndex();
+  if (!index.files[id]) {
+    index.files[id] = { size, lastAccess: Date.now() };
+    index.totalSize += size;
+  } else {
+    index.files[id].lastAccess = Date.now();
+  }
+  await saveCacheIndex(index);
+  await enforceCacheLimit();
+}
+
+async function enforceCacheLimit() {
+  const index = await loadCacheIndex();
+  if (index.totalSize <= MAX_CACHE_BYTES) return;
+
+  const sorted = Object.entries(index.files).sort(
+    (a, b) => a[1].lastAccess - b[1].lastAccess
+  );
+
+  for (const [id, file] of sorted) {
+    if (index.totalSize <= MAX_CACHE_BYTES) break;
+    await AsyncStorage.removeItem(id);
+    index.totalSize -= file.size;
+    delete index.files[id];
+  }
+
+  await saveCacheIndex(index);
+}
+
+// ---------------- Zustand State ----------------
 interface ContentState {
   items: ContentItem[];
   loading: boolean;
-  activeType: string | null;
+  refreshing: boolean;
+  activeType: ContentItem['type'] | null;
+  page: number;
+  hasMore: boolean;
+
   completedCount: number;
   correctCount: number;
   wrongCount: number;
-  lastReset: string;
-  page: number;
-  fetchByType: (type: string, reset?: boolean) => Promise<void>;
-  fetchMore: (type: string) => Promise<void>;
+
+  scrollOffsets: Record<string, number>;
+  fetchCount: Record<string, number>;
+
+  fetchByType: (type: ContentItem['type'], reset?: boolean) => Promise<void>;
+  fetchMore: (type: ContentItem['type']) => Promise<void>;
+  refresh: (type: ContentItem['type']) => Promise<void>;
   trackAnswer: (isCorrect: boolean) => void;
+  setScrollOffset: (type: ContentItem['type'], offset: number) => void;
 }
 
+// ---------------- Store ----------------
 export const useContentStore = create<ContentState>()(
   persist(
     (set, get) => ({
       items: [],
       loading: false,
+      refreshing: false,
       activeType: null,
+      page: 1,
+      hasMore: true,
+
       completedCount: 0,
       correctCount: 0,
       wrongCount: 0,
-      lastReset: new Date().toDateString(),
-      page: 1,
 
+      scrollOffsets: {},
+      fetchCount: {},
+
+      // ---------- Fetch initial ----------
       fetchByType: async (type, reset = false) => {
-        if (get().loading || (!reset && get().activeType === type && get().items.length > 0)) return;
-        set({ loading: true, activeType: type });
-        if (reset) set({ items: [], page: 1 });
+        if (get().loading) return;
 
-        if (type === 'math') {
-          set({ items: generateMath(), loading: false });
-          return;
-        }
+        set({ loading: true, activeType: type });
+        if (reset) set({ items: [], page: 1, hasMore: true });
 
         try {
-          const res = await axios.get(API_URL, { params: { type, page: 1, limit: 10 } });
-          const content = res.data.content || [];
-          await AsyncStorage.setItem(`${CACHE_PREFIX}${type}`, JSON.stringify(content));
-          set({ items: content, loading: false, page: 2 });
-        } catch (error) {
-          console.error("Fetch Error:", error);
+          const res = await axios.get(API_URL, { params: { type, page: 1, limit: 20 } });
+          const content: ContentItem[] = res.data.content || [];
+
+          const key = `${CACHE_PREFIX}${type}`;
+          const size = JSON.stringify(content).length;
+          await AsyncStorage.setItem(key, JSON.stringify(content));
+          await registerCache(key, size);
+
+          set((s) => ({
+            items: content,
+            page: 2,
+            hasMore: content.length === 20,
+            loading: false,
+            fetchCount: { ...s.fetchCount, [type]: (s.fetchCount[type] || 0) + 1 }
+          }));
+        } catch {
           const cached = await AsyncStorage.getItem(`${CACHE_PREFIX}${type}`);
           set({ items: cached ? JSON.parse(cached) : [], loading: false });
         }
       },
 
+      // ---------- Fetch more on scroll ----------
       fetchMore: async (type) => {
-        if (get().loading) return;
+        if (get().loading || !get().hasMore) return;
         set({ loading: true });
 
         try {
-          const res = await axios.get(API_URL, { params: { type, page: get().page, limit: 10 } });
-          const newContent = res.data.content || [];
-          if (newContent.length > 0) {
-            const merged = [...get().items, ...newContent];
-            await AsyncStorage.setItem(`${CACHE_PREFIX}${type}`, JSON.stringify(merged));
-            set((s) => ({ items: merged, page: s.page + 1, loading: false }));
-          } else {
-            set({ loading: false });
-          }
-        } catch (error) {
-          console.error("Fetch More Error:", error);
+          const res = await axios.get(API_URL, { params: { type, page: get().page, limit: 20 } });
+          const newItems: ContentItem[] = res.data.content || [];
+          const merged = [...get().items, ...newItems];
+
+          const key = `${CACHE_PREFIX}${type}`;
+          const size = JSON.stringify(merged).length;
+          await AsyncStorage.setItem(key, JSON.stringify(merged));
+          await registerCache(key, size);
+
+          set((s) => ({
+            items: merged,
+            page: s.page + 1,
+            hasMore: newItems.length === 20,
+            loading: false,
+            fetchCount: { ...s.fetchCount, [type]: (s.fetchCount[type] || 0) + 1 }
+          }));
+        } catch {
           set({ loading: false });
         }
       },
 
-      trackAnswer: (isCorrect) => {
-        if (isCorrect) {
-          set((s) => ({ correctCount: s.correctCount + 1, completedCount: s.completedCount + 1 }));
-        } else {
-          set((s) => ({ wrongCount: s.wrongCount + 1 }));
-        }
+      // ---------- Pull to refresh ----------
+      refresh: async (type) => {
+        set({ refreshing: true });
+        await get().fetchByType(type, true);
+        set({ refreshing: false });
       },
+
+      // ---------- Tracking ----------
+      trackAnswer: (isCorrect) =>
+        set((s) => ({
+          completedCount: s.completedCount + 1,
+          correctCount: s.correctCount + (isCorrect ? 1 : 0),
+          wrongCount: s.wrongCount + (isCorrect ? 0 : 1),
+        })),
+
+      setScrollOffset: (type, offset) =>
+        set((s) => ({ scrollOffsets: { ...s.scrollOffsets, [type]: offset } })),
     }),
     {
-      name: 'cosmic-kids-storage',
+      name: 'content-store',
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (s) => ({
         completedCount: s.completedCount,
-        lastReset: s.lastReset,
         correctCount: s.correctCount,
         wrongCount: s.wrongCount,
+        scrollOffsets: s.scrollOffsets,
+        fetchCount: s.fetchCount,
       }),
     }
   )
 );
-
-// ---------------- Emoji-based math generator ----------------
-const fruits = ['🍎', '🍌', '🍇', '🍓', '🍒', '🥝'];
-
-// Show "0" when num = 0, else repeat emoji
-const numberToEmoji = (num: number, emoji: string) => num === 0 ? '0' : emoji.repeat(num);
-
-export const generateMath = (count: number = 8): ContentItem[] => {
-  const operations: ('Add' | 'Subtract' | 'Multiply' | 'Divide')[] = ['Add', 'Subtract', 'Multiply', 'Divide'];
-  const arr: ContentItem[] = [];
-
-  for (let i = 0; i < count; i++) {
-    const op = operations[Math.floor(Math.random() * operations.length)];
-    let a = Math.floor(Math.random() * 5) + 1;
-    let b = Math.floor(Math.random() * 5) + 1;
-    let answer = 0;
-
-    const emojiA = fruits[Math.floor(Math.random() * fruits.length)];
-    const emojiB = fruits[Math.floor(Math.random() * fruits.length)];
-
-    let question = '';
-    let title = '';
-    let imageUrl = emojiA;
-
-    switch (op) {
-      case 'Add':
-        answer = a + b;
-        question = `What is ${a} ${emojiA}${a > 1 ? '' : ''} + ${b} ${emojiB}${b > 1 ? '' : ''}?`;
-        title = `${a} + ${b}`;
-        break;
-      case 'Subtract':
-        if (b > a) [a, b] = [b, a];
-        answer = a - b;
-        question = `What is ${a} ${emojiA}${a > 1 ? '' : ''} - ${b} ${emojiB}${b > 1 ? '' : ''}?`;
-        title = `${a} - ${b}`;
-        break;
-      case 'Multiply':
-        answer = a * b;
-        question = `What is ${a} ${emojiA}${a > 1 ? '' : ''} × ${b} ${emojiB}${b > 1 ? '' : ''}?`;
-        title = `${a} × ${b}`;
-        break;
-      case 'Divide':
-        answer = a;
-        const product = a * b;
-        question = `What is ${product} ${emojiA}${product > 1 ? '' : ''} ÷ ${b} ${emojiB}${b > 1 ? '' : ''}?`;
-        title = `${product} ÷ ${b}`;
-        break;
-    }
-
-    arr.push({
-      _id: `math-${Date.now()}-${i}`,
-      type: 'math',
-      title,
-      imageUrl,
-      soundUrl: `/uploads/math/sounds/${title.replace(/ /g,'')}.mp3`,
-      question,
-      options: [
-        numberToEmoji(answer, emojiA),
-        numberToEmoji(answer + 1, emojiA),
-        numberToEmoji(Math.max(0, answer - 1), emojiA),
-        numberToEmoji(answer + 2, emojiA),
-      ],
-      correctAnswer: numberToEmoji(answer, emojiA),
-    });
-  }
-
-  return arr;
-};

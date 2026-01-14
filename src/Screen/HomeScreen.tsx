@@ -1,232 +1,136 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  SafeAreaView,
-  TouchableOpacity,
-  Image,
-  FlatList,
-  Modal,
-  TextInput,
-  Alert,
-  Platform, // Added to fix the error
-  useWindowDimensions, // Critical for "All-Device" responsiveness
+  View, Text, StyleSheet, SafeAreaView, TouchableOpacity,
+  Image, StatusBar, useWindowDimensions, Animated as RNAnimated,
+  NativeSyntheticEvent, NativeScrollEvent, AppState
 } from 'react-native';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withRepeat,
-  withSequence,
-  withTiming,
-  withSpring,
-  BounceIn,
-  FadeInDown,
-} from 'react-native-reanimated';
+import Orientation from 'react-native-orientation-locker';
 import Tts from 'react-native-tts';
-import Ionicons from 'react-native-vector-icons/Ionicons';
-import { useNavigation } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import Video from 'react-native-video';
+import { useNavigation, NavigationProp, useFocusEffect } from '@react-navigation/native';
+import { Volume2, VolumeX, Settings, LogOut, Star } from 'lucide-react-native';
 import { RootStackParamList } from '../navigation/AppNavigator';
 
-// --- DATA ---
-const STRINGS = {
-  title: 'Modern Kids Learning',
-  Alphabet: 'Alphabet',
-  Math: 'Math',
-  Colors: 'Colors',
-  Shapes: 'Shapes',
-  Animals: 'Animals',
-  Fruits: 'Fruits',
-  Flower: 'Flower'
-} as const;
+export interface CardItem {
+  key: string;
+  color: string;
+  image: any;
+  label: string;
+  screen: keyof RootStackParamList;
+}
 
-const CARDS = [
-  { key: 'Animals', color: '#FFB347', image: require('../assets/images/animals.jpeg'), route: 'Animal' },
-  { key: 'Fruits', color: '#77DD77', image: require('../assets/images/fruits.png'), route: 'Fruits' },
-  { key: 'Math', color: '#4facfe', image: require('../assets/images/123.jpeg'), route: 'Math' },
-  { key: 'Alphabet', color: '#FF5E5E', image: require('../assets/images/abc.jpeg'), route: 'Alphabet' },
-  { key: 'Colors', color: '#A18CD1', image: require('../assets/images/color.jpeg'), route: 'Colors' },
-  { key: 'Shapes', color: '#FAD02E', image: require('../assets/images/shapes.png'), route: 'Shapes' },
-  { key: 'Flower', color: '#FFB347', image: require('../assets/images/shapes.png'), route: 'Flower' },
-]
-// --- COMPONENTS ---
-
-const AnimatedCard = ({ item, index, numColumns }: any) => {
-  const { width } = useWindowDimensions();
-  const scale = useSharedValue(1);
-  const navigation = useNavigation<any>();
-
-  // Calculate dynamic width for responsiveness
-  const spacing = 20;
-  const itemWidth = (width - spacing * (numColumns + 1)) / numColumns;
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  const handlePress = () => {
-    Tts.stop();
-    Tts.speak(item.key);
-    if (item.route) navigation.navigate(item.route);
-  };
-
-  return (
-    <Animated.View 
-      entering={BounceIn.delay(index * 100)} 
-      style={[styles.cardWrapper, { width: itemWidth }, animatedStyle]}
-    >
-      <TouchableOpacity
-        activeOpacity={1}
-        onPressIn={() => (scale.value = withSpring(0.92))}
-        onPressOut={() => (scale.value = withSpring(1))}
-        onPress={handlePress}
-        style={[styles.card, { backgroundColor: item.color }]}
-      >
-        <View style={styles.whiteBubble}>
-          <Image source={item.image} style={styles.cardImage} />
-        </View>
-        <Text style={styles.cardLabel}>{item.key}</Text>
-      </TouchableOpacity>
-      {/* 3D Bottom Shadow Effect */}
-      <View style={[styles.cardShadow, { backgroundColor: item.color }]} />
-    </Animated.View>
-  );
-};
-
-// --- MAIN SCREEN ---
+const CARDS: CardItem[] = [
+  { key: 'Alphabet', color: '#9D4EDD', image: require('../assets/images/abc.jpeg'), label: 'ABC', screen: 'AlphabetMenu' },
+  { key: 'Numbers', color: '#10B981', image: require('../assets/images/123.jpeg'), label: '123', screen: 'MathMenu' },
+  { key: 'Animals', color: '#FFB347', image: require('../assets/images/animals.jpeg'), label: 'Animals', screen: 'Animal' },
+  { key: 'Fruits', color: '#77DD77', image: require('../assets/images/fruits.png'), label: 'Fruits', screen: 'Fruits' },
+  { key: 'Colors', color: '#4facfe', image: require('../assets/images/color.jpeg'), label: 'Colors', screen: 'Colors' },
+  { key: 'Flowers', color: '#FF77FF', image: require('../assets/images/flower.jpeg'), label: 'Flower', screen: 'Flower' },
+  { key: 'Birds', color: '#4facfe', image: require('../assets/images/bird.jpeg'), label: 'Birds', screen: 'Birds' },
+];
 
 export default function HomeScreen() {
-  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const { width, height } = useWindowDimensions();
-  const [modalVisible, setModalVisible] = useState(false);
-  const [inputValue, setInputValue] = useState('');
+  const scrollX = useRef(new RNAnimated.Value(0)).current;
+  const [isMuted, setIsMuted] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
 
-  // Responsiveness Logic
-  const isLandscape = width > height;
-  const isTablet = width > 768;
-  const numColumns = isTablet ? (isLandscape ? 4 : 3) : 2;
+  const SPACING = 15;
+  const CARD_WIDTH = Math.min(350, width * 0.28);
+  const FULL_SIZE = CARD_WIDTH + SPACING * 2;
 
-  // const handleConfirmParents = () => {
-  //   if (inputValue === '8') {
-  //     setModalVisible(false);
-  //     navigation.navigate('Settings');
-  //   } else {
-  //     Alert.alert('Oops!', 'That answer is not correct 😊');
-  //   }
-  // };
+  useFocusEffect(
+    useCallback(() => {
+      Orientation.lockToLandscape();
+      return () => Orientation.unlockAllOrientations();
+    }, [])
+  );
+
+  const speakSafe = (text: string) => {
+    Tts.stop();
+    Tts.speak(text);
+  };
+
+  const handlePressCard = (item: CardItem) => {
+    speakSafe(item.label);
+    if (item.screen === 'Math') {
+      navigation.navigate('Math', { type: 'addition' });
+    } else {
+      navigation.navigate(item.screen);
+    }
+  };
+
+  const onScroll = RNAnimated.event(
+    [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+    {
+      useNativeDriver: true,
+      listener: (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+        const index = Math.round(event.nativeEvent.contentOffset.x / FULL_SIZE);
+        if (index !== activeIndex && index >= 0 && index < CARDS.length) {
+          setActiveIndex(index);
+          speakSafe(CARDS[index].label);
+        }
+      },
+    }
+  );
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Decorative Floating Bubbles */}
-      <View style={StyleSheet.absoluteFill} pointerEvents="none">
-        <View style={[styles.bgBubble, { top: '15%', left: '5%', width: 50, height: 50 }]} />
-        <View style={[styles.bgBubble, { top: '40%', right: '10%', width: 80, height: 80 }]} />
-        <View style={[styles.bgBubble, { bottom: '20%', left: '10%', width: 40, height: 40 }]} />
-      </View>
-
-      <Text style={styles.headerTitle}>{STRINGS.title}</Text>
-
-      <FlatList
-        data={CARDS}
-        key={numColumns} // Forces refresh when rotating screen
-        numColumns={numColumns}
-        contentContainerStyle={styles.listContainer}
-        showsVerticalScrollIndicator={false}
-        renderItem={({ item, index }) => (
-          <AnimatedCard item={item} index={index} numColumns={numColumns} />
-        )}
+    <View style={styles.container}>
+      <StatusBar hidden />
+      <Video
+        source={require('../assets/images/background.mp4')}
+        repeat muted={isMuted} resizeMode="cover"
+        style={StyleSheet.absoluteFillObject}
       />
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.topBar}>
+          <TouchableOpacity style={[styles.roundBtn, { backgroundColor: '#FF4757' }]}>
+            <LogOut color="white" size={28} />
+          </TouchableOpacity>
+          <View style={styles.topRightGroup}>
+            <TouchableOpacity onPress={() => setIsMuted(!isMuted)} style={[styles.roundBtn, { backgroundColor: '#f59e0b', marginRight: 12 }]}>
+              {isMuted ? <VolumeX color="white" size={28} /> : <Volume2 color="white" size={28} />}
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.roundBtn, { backgroundColor: '#1E90FF' }]} onPress={() => navigation.navigate('Settings')}>
+              <Settings color="white" size={28} />
+            </TouchableOpacity>
+          </View>
+        </View>
 
-      {/* Settings Navigation Trigger */}
-      <TouchableOpacity 
-        style={styles.settingsBtn} 
-        onPress={() => setModalVisible(true)}
-      >
-        <Ionicons name="settings" size={28} color="#94A3B8" />
-      </TouchableOpacity>
-
-   
-    </SafeAreaView>
+        <RNAnimated.FlatList
+          data={CARDS}
+          horizontal
+          snapToInterval={FULL_SIZE}
+          decelerationRate="fast"
+          showsHorizontalScrollIndicator={false}
+          onScroll={onScroll}
+          contentContainerStyle={{ paddingHorizontal: (width - CARD_WIDTH) / 2 }}
+          renderItem={({ item, index }) => {
+            const inputRange = [(index - 1) * FULL_SIZE, index * FULL_SIZE, (index + 1) * FULL_SIZE];
+            const scale = scrollX.interpolate({ inputRange, outputRange: [0.8, 1.05, 0.8], extrapolate: 'clamp' });
+            return (
+              <RNAnimated.View style={{ width: CARD_WIDTH, height: height * 0.7, transform: [{ scale }], marginHorizontal: SPACING / 2 }}>
+                <TouchableOpacity onPress={() => handlePressCard(item)} style={[styles.cardMain, { backgroundColor: item.color }]}>
+                  <Image source={item.image} style={styles.cardImage} />
+                  <Text style={styles.cardLabel}>{item.label}</Text>
+                </TouchableOpacity>
+              </RNAnimated.View>
+            );
+          }}
+        />
+      </SafeAreaView>
+    </View>
   );
 }
 
-// --- STYLES ---
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#E6DFFC' },
-  headerTitle: {
-    fontSize: 40,
-    fontWeight: '900',
-    textAlign: 'center',
-    color: '#FFB347',
-    marginVertical: 20,
-    // Add custom font here if available
-  },
-  listContainer: { paddingHorizontal: 10, paddingBottom: 100 },
-  
-  // Card 3D Styling
-  cardWrapper: {
-    height: 180,
-    marginVertical: 15,
-    marginHorizontal: 10,
-    alignItems: 'center',
-  },
-  card: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 80, // Makes it a pill shape
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 2,
-    borderWidth: 3,
-    borderColor: 'rgba(255,255,255,0.4)',
-  },
-  cardShadow: {
-    position: 'absolute',
-    bottom: -8,
-    width: '95%',
-    height: '100%',
-    borderRadius: 80,
-    opacity: 0.4,
-    zIndex: 1,
-  },
-  whiteBubble: {
-    width: 80,
-    height: 80,
-    backgroundColor: 'rgba(255,255,255,0.3)',
-    borderRadius: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 5,
-  },
-  cardImage: { width: 60, height: 60, resizeMode: 'contain' },
-  cardLabel: { color: '#FFF', fontSize: 18, fontWeight: '900' },
-
-  // Background
-  bgBubble: {
-    position: 'absolute',
-    backgroundColor: '#FFF',
-    borderRadius: 100,
-    opacity: 0.4,
-  },
-
-  settingsBtn: {
-    position: 'absolute',
-    bottom: 30,
-    right: 30,
-    backgroundColor: '#FFF',
-    padding: 15,
-    borderRadius: 50,
-    elevation: 5,
-  },
-
-  // Modal
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
-  modalContainer: { width: 280, backgroundColor: '#FFF', borderRadius: 30, padding: 30, alignItems: 'center' },
-  modalTitle: { fontSize: 22, fontWeight: '900', marginBottom: 10 },
-  modalSubtitle: { fontSize: 18, marginBottom: 20 },
-  modalInput: { width: '100%', height: 50, backgroundColor: '#F1F5F9', borderRadius: 15, textAlign: 'center', fontSize: 20, marginBottom: 20 },
-  okButton: { backgroundColor: '#4facfe', paddingHorizontal: 40, paddingVertical: 12, borderRadius: 25 },
-  okButtonText: { color: '#FFF', fontWeight: 'bold' },
+  container: { flex: 1, backgroundColor: '#000' },
+  safeArea: { flex: 1 },
+  topBar: { flexDirection: 'row', justifyContent: 'space-between', padding: 20 },
+  topRightGroup: { flexDirection: 'row' },
+  roundBtn: { width: 55, height: 55, borderRadius: 28, justifyContent: 'center', alignItems: 'center', elevation: 8 },
+  cardMain: { flex: 1, borderRadius: 30, justifyContent: 'center', alignItems: 'center', elevation: 6 },
+  cardImage: { width: '90%', height: '65%', resizeMode: 'contain', borderRadius: 20 },
+  cardLabel: { color: '#fff', fontSize: 28, fontWeight: 'bold', marginTop: 10 },
 });

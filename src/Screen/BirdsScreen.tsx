@@ -1,170 +1,183 @@
-import React, { useRef, useState, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
-  View, Text, StyleSheet, Dimensions, PanResponder, SafeAreaView,
-  TouchableOpacity, Platform, StatusBar, LayoutChangeEvent, Alert, PermissionsAndroid
+  StyleSheet, View, Text, TouchableOpacity, SafeAreaView,
+  StatusBar, Animated, ActivityIndicator, ImageBackground
 } from 'react-native';
-import Svg, { Path, G, Text as SvgText, Circle } from 'react-native-svg';
-import Animated, { BounceIn } from 'react-native-reanimated';
 import Tts from 'react-native-tts';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import ViewShot, { captureRef } from "react-native-view-shot";
-import { CameraRoll } from "@react-native-camera-roll/camera-roll";
+import { ArrowLeft, ArrowRight, X, Zap, Gamepad2 } from 'lucide-react-native';
+import Orientation from 'react-native-orientation-locker';
+import { useContentStore } from '../store/useContentStore';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const BIRD_COLORS = ['#FFD93D', '#FF8C42', '#4BCBFF', '#62D261', '#A55EEA'];
+const BASE_URL = 'https://kiddsapp-backend.tecobit.cloud';
 
-const normalize = (size: number, width: number = SCREEN_WIDTH) => 
-  Math.round(size * (width / 375));
+const BirdScreen = () => {
+  const { items, loading, fetchByType } = useContentStore();
+  const [index, setIndex] = useState(0);
 
-type Point = { x: number; y: number; color: string };
+  // Animation values
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const translateYAnim = useRef(new Animated.Value(0)).current;
+  const badgeScale = useRef(new Animated.Value(1)).current;
+  const leftBtnPush = useRef(new Animated.Value(0)).current;
+  const rightBtnPush = useRef(new Animated.Value(0)).current;
 
-export default function BirdsScreen() {
-  const viewShotRef = useRef<ViewShot>(null);
-  const [points, setPoints] = useState<Point[]>([]);
-  const [brushColor, setBrushColor] = useState('#FFD93D');
-  const [celebrate, setCelebrate] = useState(false);
-  const [stars, setStars] = useState(0);
+  useEffect(() => {
+    Orientation.lockToLandscape();
+    StatusBar.setHidden(true);
+    fetchByType('bird', true);
 
-  const [layout, setLayout] = useState({
-    width: Dimensions.get('window').width,
-    height: Dimensions.get('window').height,
-    isLandscape: Dimensions.get('window').width > Dimensions.get('window').height,
-  });
+    return () => {
+      Orientation.unlockAllOrientations();
+      StatusBar.setHidden(false);
+    };
+  }, []);
 
-  const onLayout = (event: LayoutChangeEvent) => {
-    const { width, height } = event.nativeEvent.layout;
-    setLayout({ width, height, isLandscape: width > height });
+  if (loading || items.length === 0) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color="#FF004D" />
+      </View>
+    );
+  }
+
+  const currentBird = items[index];
+  const isEmoji = (str: string) => str && str.length <= 4 && !str.includes('/') && !str.startsWith('http');
+
+  const handleNav = (dir: 'next' | 'prev', animVar: Animated.Value) => {
+    Animated.sequence([
+      Animated.timing(animVar, { toValue: 5, duration: 100, useNativeDriver: true }),
+      Animated.timing(animVar, { toValue: 0, duration: 100, useNativeDriver: true }),
+    ]).start(() => {
+      if (dir === 'next' && index < items.length - 1) setIndex(index + 1);
+      if (dir === 'prev' && index > 0) setIndex(index - 1);
+
+      // Trigger slide-up and badge animation
+      translateYAnim.setValue(20);
+      badgeScale.setValue(0.8);
+      Animated.spring(translateYAnim, { toValue: 0, friction: 5, useNativeDriver: true }).start();
+      Animated.spring(badgeScale, { toValue: 1, friction: 3, useNativeDriver: true }).start();
+    });
   };
 
-  const geometry = useMemo(() => {
-    const canvasHeight = layout.isLandscape ? layout.height * 0.55 : layout.height * 0.5;
-    return { canvasHeight, center: { x: layout.width / 2, y: canvasHeight / 2 } };
-  }, [layout]);
-
-  // --- SAVE LOGIC ---
-  const saveDrawing = async () => {
-    if (Platform.OS === 'android') {
-        const permission = Number(Platform.Version) >= 33 
-            ? PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES 
-            : PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE;
-        const status = await PermissionsAndroid.request(permission);
-        if (status !== 'granted') return;
-    }
-    try {
-      const uri = await captureRef(viewShotRef, { format: "png", quality: 0.9 });
-      await CameraRoll.saveAsset(uri, { type: 'photo' });
-      Alert.alert("Tweet Tweet! 🐦", "Your bird is saved in your gallery!");
-    } catch (e) {
-      Alert.alert("Oops!", "Rebuild the app to enable saving.");
-    }
+  const speakAndBounce = () => {
+    Tts.stop();
+    Tts.speak(currentBird.title || 'Bird');
+    
+    Animated.sequence([
+      Animated.timing(scaleAnim, { toValue: 1.1, duration: 100, useNativeDriver: true }),
+      Animated.spring(scaleAnim, { toValue: 1, friction: 3, useNativeDriver: true }),
+    ]).start();
   };
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onPanResponderMove: (e) => {
-        const { locationX, locationY } = e.nativeEvent;
-        setPoints(prev => [...prev, { x: locationX, y: locationY, color: brushColor }]);
-      },
-      onPanResponderRelease: () => {
-        if (points.length > 30) {
-          setCelebrate(true);
-          setStars(s => s + 1);
-          Tts.speak("What a beautiful bird!");
-          setTimeout(() => setCelebrate(false), 2000);
-        }
-      }
-    })
-  ).current;
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaView style={styles.container} onLayout={onLayout}>
-        <View style={[styles.mainWrapper, layout.isLandscape && styles.landscapeWrapper]}>
+    <View style={styles.container}>
+      <ImageBackground 
+        source={{ uri: 'https://i.imgur.com/your_landscape_bg.png' }} 
+        style={styles.flex}
+        resizeMode="cover"
+      >
+        <SafeAreaView style={styles.flex}>
           
           {/* HEADER */}
-          <View style={[styles.topSection, layout.isLandscape && styles.landscapeTop]}>
-            <Text style={styles.title}>Bird Painter 🐤</Text>
-            <View style={styles.stats}>
-                <Text style={styles.starText}>⭐ {stars}</Text>
+          <View style={styles.header}>
+            <View style={styles.headerLeft}>
+              <TouchableOpacity style={[styles.roundBtn, { backgroundColor: '#FFB300' }]}>
+                <Zap color="white" fill="white" size={20} />
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.roundBtn, { backgroundColor: '#F44336' }]}>
+                <Gamepad2 color="white" size={20} />
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity style={styles.saveBtn} onPress={saveDrawing}>
-              <Text style={styles.saveBtnText}>📸 SAVE BIRD</Text>
+
+            <TouchableOpacity style={styles.exitBtn}>
+              <X color="white" strokeWidth={5} size={22} />
             </TouchableOpacity>
           </View>
 
-          {/* CANVAS */}
-          <ViewShot ref={viewShotRef} options={{ format: "png", quality: 0.9 }} style={{ flex: layout.isLandscape ? 1.5 : 0 }}>
-            <View style={[styles.drawingBoard, { height: geometry.canvasHeight }]} {...panResponder.panHandlers}>
-              <Svg height={geometry.canvasHeight} width={layout.width}>
-                {/* Bird Guide Silhouette */}
-                <G opacity="0.1" transform={`translate(${geometry.center.x - 50}, ${geometry.center.y - 50}) scale(2)`}>
-                    <Path d="M30,20 C10,20 5,40 5,60 C5,80 15,90 30,90 C45,90 55,80 55,60 C55,40 50,20 30,20 Z" fill="#000" />
-                    <Circle cx="45" cy="40" r="15" fill="#000" /> 
-                    <Path d="M55,35 L65,40 L55,45 Z" fill="#000" />
-                </G>
-
-                {/* The Drawing */}
-                {points.map((p, i) => i > 0 && (
-                  <Path
-                    key={i}
-                    d={`M ${points[i-1].x} ${points[i-1].y} L ${p.x} ${p.y}`}
-                    stroke={p.color}
-                    strokeWidth={15}
-                    strokeLinecap="round"
-                  />
-                ))}
-              </Svg>
-              {celebrate && (
-                <Animated.View entering={BounceIn} style={styles.overlay}>
-                  <Text style={styles.overlayText}>🐦 AMAZING! 🌈</Text>
+          {/* INTERACTION CONTENT */}
+          <View style={styles.content}>
+            
+            {/* LEFT ARROW */}
+            <TouchableOpacity activeOpacity={1} onPress={() => handleNav('prev', leftBtnPush)} disabled={index === 0}>
+              <View style={[styles.navBtn3D, index === 0 && { opacity: 0.5 }]}>
+                <View style={styles.btnShadow} />
+                <Animated.View style={[styles.btnFace, { transform: [{ translateY: leftBtnPush }] }]}>
+                  <ArrowLeft color="#7B5231" size={35} strokeWidth={4} />
                 </Animated.View>
-              )}
-            </View>
-          </ViewShot>
+              </View>
+            </TouchableOpacity>
 
-          {/* MENU */}
-          <View style={[styles.bottomMenu, layout.isLandscape && styles.landscapeBottom]}>
-            <Text style={styles.label}>Pick a Feather Color:</Text>
-            <View style={styles.colorRow}>
-              {BIRD_COLORS.map(c => (
-                <TouchableOpacity 
-                    key={c} 
-                    style={[styles.bubble, { backgroundColor: c, borderWidth: brushColor === c ? 3 : 0 }]} 
-                    onPress={() => setBrushColor(c)} 
-                />
-              ))}
-            </View>
-            <TouchableOpacity style={styles.clearBtn} onPress={() => setPoints([])}>
-              <Text style={styles.clearText}>START OVER</Text>
+            {/* CHARACTER/EMOJI */}
+            <TouchableOpacity activeOpacity={1} onPress={speakAndBounce} style={styles.displayArea}>
+              <Animated.View style={{ transform: [{ scale: scaleAnim }, { translateY: translateYAnim }] }}>
+                {isEmoji(currentBird.imageUrl) ? (
+                  <Text style={styles.emojiText}>{currentBird.imageUrl}</Text>
+                ) : (
+                  <Animated.Image
+                    source={{ uri: currentBird.imageUrl.startsWith('http') ? currentBird.imageUrl : `${BASE_URL}/${currentBird.imageUrl}` }}
+                    style={styles.mainImage}
+                    resizeMode="contain"
+                  />
+                )}
+              </Animated.View>
+            </TouchableOpacity>
+
+            {/* RIGHT ARROW */}
+            <TouchableOpacity activeOpacity={1} onPress={() => handleNav('next', rightBtnPush)} disabled={index === items.length - 1}>
+              <View style={[styles.navBtn3D, index === items.length - 1 && { opacity: 0.5 }]}>
+                <View style={styles.btnShadow} />
+                <Animated.View style={[styles.btnFace, { transform: [{ translateY: rightBtnPush }] }]}>
+                  <ArrowRight color="#7B5231" size={35} strokeWidth={4} />
+                </Animated.View>
+              </View>
             </TouchableOpacity>
           </View>
-          
-        </View>
-      </SafeAreaView>
-    </GestureHandlerRootView>
+
+          {/* BOTTOM BADGE */}
+          <Animated.View style={[styles.bottomBadge, { transform: [{ scale: badgeScale }, { translateY: translateYAnim }] }]}>
+            <Text style={styles.bottomBadgeText}>{currentBird.title?.toUpperCase()}</Text>
+          </Animated.View>
+
+          {/* GRASS FOOTER */}
+          <View style={styles.grassFooter}>
+            <Text style={styles.grassText}>🌱🌿🌻☘️🌵🌷🍀🌿🌱🌻🌱🌿🌻☘️🌵🌷🍀🌿🌱🌻</Text>
+          </View>
+
+        </SafeAreaView>
+      </ImageBackground>
+    </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFBEB' },
-  mainWrapper: { flex: 1 },
-  landscapeWrapper: { flexDirection: 'row' },
-  topSection: { alignItems: 'center', padding: 15 },
-  landscapeTop: { width: '25%', justifyContent: 'center' },
-  title: { fontSize: normalize(26), fontWeight: '900', color: '#92400E' },
-  stats: { marginVertical: 5 },
-  starText: { fontSize: 20, fontWeight: 'bold', color: '#D97706' },
-  saveBtn: { backgroundColor: '#059669', padding: 10, borderRadius: 12, marginTop: 10 },
-  saveBtnText: { color: '#FFF', fontWeight: 'bold' },
-  drawingBoard: { backgroundColor: '#FEF3C7', width: '100%' },
-  bottomMenu: { padding: 20, alignItems: 'center' },
-  landscapeBottom: { width: '25%', justifyContent: 'center' },
-  label: { fontWeight: '700', color: '#B45309', marginBottom: 10 },
-  colorRow: { flexDirection: 'row', gap: 15, marginBottom: 20 },
-  bubble: { width: 40, height: 40, borderRadius: 20, borderColor: '#92400E' },
-  clearBtn: { backgroundColor: '#EF4444', paddingVertical: 12, paddingHorizontal: 30, borderRadius: 15 },
-  clearText: { color: '#FFF', fontWeight: '900' },
-  overlay: { position: 'absolute', alignSelf: 'center', top: '40%', backgroundColor: 'white', padding: 20, borderRadius: 20, elevation: 5 },
-  overlayText: { fontSize: 24, fontWeight: '900', color: '#D97706' }
+  flex: { flex: 1 },
+  container: { flex: 1, backgroundColor: '#87CEEB' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+
+  // HEADER
+  header: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 10, alignItems: 'center' },
+  headerLeft: { flexDirection: 'row', gap: 10 },
+  roundBtn: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: 'white', elevation: 4 },
+  exitBtn: { backgroundColor: '#FF5722', width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: 'white' },
+
+  // CONTENT
+  content: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 30 },
+  displayArea: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  mainImage: { width: 320, height: 260 },
+  emojiText: { fontSize: 160 },
+
+  // NAV BUTTON 3D
+  navBtn3D: { width: 75, height: 65 },
+  btnShadow: { position: 'absolute', bottom: 0, width: 75, height: 55, backgroundColor: '#7B5231', borderRadius: 15 },
+  btnFace: { width: 75, height: 58, backgroundColor: '#F3D299', borderRadius: 15, borderWidth: 3, borderColor: '#7B5231', justifyContent: 'center', alignItems: 'center' },
+
+  // BOTTOM BADGE
+  bottomBadge: { backgroundColor: '#FF003C', paddingHorizontal: 50, paddingVertical: 8, borderRadius: 20, borderWidth: 3, borderColor: '#B3002A', alignSelf: 'center', marginBottom: 10, elevation: 6 },
+  bottomBadgeText: { color: 'white', fontSize: 26, fontWeight: '900', letterSpacing: 1, textAlign: 'center' },
+
+  // GRASS FOOTER
+  grassFooter: { height: 45, backgroundColor: '#4CAF50', justifyContent: 'center', overflow: 'hidden' },
+  grassText: { fontSize: 32, textAlign: 'center', marginTop: -8 },
 });
+
+export default BirdScreen;

@@ -1,227 +1,275 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Image,
-  ActivityIndicator, Vibration, Platform, 
-  SafeAreaView, useWindowDimensions, Animated,
-  Alert
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Image,
+  ActivityIndicator,
+  Vibration,
+  Platform,
+  SafeAreaView,
+  useWindowDimensions,
+  Animated,
+  ImageBackground,
+  StatusBar,
 } from 'react-native';
-import Sound from 'react-native-sound';
 import Tts from 'react-native-tts';
-import ConfettiCannon from 'react-native-confetti-cannon';
-import LinearGradient from 'react-native-linear-gradient';
+import { ArrowLeft, ArrowRight, X, Zap, Gamepad2 } from 'lucide-react-native';
+import Orientation from 'react-native-orientation-locker';
 import { useContentStore } from '../store/useContentStore';
 
 const BASE_URL = 'https://kiddsapp-backend.tecobit.cloud';
 
-// ---------- Rocket Navigation Component ----------
-const RocketButton = ({ direction, onPress, styles }: { direction: 'left' | 'right', onPress: () => void, styles: any }) => {
-  const tiltAnim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(tiltAnim, { toValue: 1, duration: 1500, useNativeDriver: true }),
-        Animated.timing(tiltAnim, { toValue: 0, duration: 1500, useNativeDriver: true }),
-      ])
-    ).start();
-  }, []);
-
-  const translateY = tiltAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, -10],
-  });
-
-  return (
-    <TouchableOpacity 
-      activeOpacity={0.7} 
-      onPress={onPress} 
-      style={[styles.rocketContainer, direction === 'left' ? { left: 15 } : { right: 15 }]}
-    >
-      <Animated.View style={{ transform: [{ translateY }] }}>
-        <Text style={[styles.rocketEmoji, direction === 'left' && { transform: [{ rotate: '-90deg' }] }]}>🚀</Text>
-        <Text style={styles.rocketText}>{direction === 'left' ? 'BACK' : 'NEXT'}</Text>
-      </Animated.View>
-    </TouchableOpacity>
-  );
-};
-
-// ---------- Fixed Flower Card Component ----------
-const FlowerCard = ({ item, styles }: any) => {
-  const scaleValue = useRef(new Animated.Value(1)).current;
-
-  // Normalize and detect image types (emoji vs remote URL)
-  const isEmoji = (v?: string) => v && /\p{Emoji}/u.test(v);
-  const normalizeUrl = (url?: string | null) => {
-    if (!url) return null;
-    if (url.startsWith('http')) return url;
-    return `${BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
-  };
-  const imageUri = normalizeUrl(item.imageUrl);
-
-  const handlePress = () => {
-    Animated.sequence([
-      Animated.timing(scaleValue, { toValue: 0.85, duration: 100, useNativeDriver: true }),
-      Animated.spring(scaleValue, { toValue: 1.1, friction: 3, useNativeDriver: true }),
-      Animated.timing(scaleValue, { toValue: 1, duration: 100, useNativeDriver: true }),
-    ]).start();
-
-    if (item.soundUrl) {
-      const fullUrl = item.soundUrl.startsWith('http') ? item.soundUrl : `${BASE_URL}${item.soundUrl}`;
-      const sound = new Sound(fullUrl, '', (error) => {
-        if (!error) sound.play(() => sound.release());
-      });
-    }
-    Tts.stop();
-    Tts.speak(item.title || "Flower");
-    if (Platform.OS === 'android') Vibration.vibrate(15);
-  };
-
-  return (
-    <View style={styles.cardContainer}>
-      <Animated.View style={[styles.clayCard, { transform: [{ scale: scaleValue }] }]}>
-        <TouchableOpacity activeOpacity={1} onPress={handlePress} style={styles.imageWrapper}>
-          {isEmoji(item.imageUrl) ? (
-            <Text style={styles.emojiMain}>{item.imageUrl}</Text>
-          ) : imageUri ? (
-            <Image
-              source={{ uri: imageUri }}
-              style={styles.flowerImage}
-              resizeMode="contain"
-            />
-          ) : (
-            <Text style={styles.emojiMain}>❓</Text>
-          )}
-        </TouchableOpacity>
-        <View style={styles.nameTag}>
-          <Text style={styles.flowerTitle}>{item.title ? item.title.toUpperCase() : ""}</Text>
-        </View>
-      </Animated.View>
-    </View>
-  );
-};
-
-// ---------- Main Screen ----------
 export default function FlowerScreen() {
-  const { width } = useWindowDimensions();
-  const styles = createStyles(width);
-  const { items: storeItems, loading, fetchByType } = useContentStore();
-  const [items, setItems] = useState<any[]>([]);
+  const { width, height } = useWindowDimensions();
+  const { items, loading, fetchByType } = useContentStore();
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [showConfetti, setShowConfetti] = useState(false);
+
+  // Animation refs
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const translateYAnim = useRef(new Animated.Value(0)).current;
+  const badgeScale = useRef(new Animated.Value(1)).current;
+  const leftBtnPush = useRef(new Animated.Value(0)).current;
+  const rightBtnPush = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    Orientation.lockToLandscape();
+    StatusBar.setHidden(true);
     fetchByType('flower', true);
-  }, []);
 
-  useEffect(() => {
-    if (storeItems.length > 0) setItems(storeItems);
-  }, [storeItems]);
+    return () => {
+      Orientation.unlockAllOrientations();
+      StatusBar.setHidden(false);
+    };
+  }, []);
 
   const handleNext = () => {
     if (currentIndex < items.length - 1) {
       setCurrentIndex(currentIndex + 1);
-    } else {
-      setShowConfetti(true);
-      setTimeout(() => setShowConfetti(false), 3000);
+      triggerTransition();
     }
   };
 
   const handlePrev = () => {
-    if (currentIndex > 0) setCurrentIndex(currentIndex - 1);
+    if (currentIndex > 0) {
+      setCurrentIndex(currentIndex - 1);
+      triggerTransition();
+    }
   };
 
-  if (loading && items.length === 0) {
+  const triggerTransition = () => {
+    // Flower scale animation
+    scaleAnim.setValue(0.8);
+    Animated.spring(scaleAnim, { toValue: 1, friction: 4, useNativeDriver: true }).start();
+
+    // Badge bounce animation
+    badgeScale.setValue(0.8);
+    Animated.spring(badgeScale, { toValue: 1, friction: 3, useNativeDriver: true }).start();
+
+    // Slide-up animation for flower + badge
+    translateYAnim.setValue(20); // start slightly lower
+    Animated.spring(translateYAnim, { toValue: 0, friction: 5, useNativeDriver: true }).start();
+  };
+
+  const handlePress = (item: any) => {
+    Tts.stop();
+    Tts.speak(item.title || 'Flower');
+
+    if (Platform.OS === 'android') Vibration.vibrate(15);
+
+    // Tap bounce effect on flower
+    Animated.sequence([
+      Animated.timing(scaleAnim, { toValue: 1.1, duration: 100, useNativeDriver: true }),
+      Animated.spring(scaleAnim, { toValue: 1, friction: 3, useNativeDriver: true }),
+    ]).start();
+  };
+
+  const animateNavButton = (animVar: Animated.Value, action: () => void) => {
+    Animated.sequence([
+      Animated.timing(animVar, { toValue: 4, duration: 100, useNativeDriver: true }),
+      Animated.timing(animVar, { toValue: 0, duration: 100, useNativeDriver: true }),
+    ]).start(() => action());
+  };
+
+  if (loading || items.length === 0) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#FF69B4" />
+        <ActivityIndicator size="large" color="#FF003C" />
       </View>
     );
   }
 
-  return (
-    <LinearGradient colors={['#E0F7FA', '#FCE4EC']} style={styles.container}>
-      <SafeAreaView style={{ flex: 1 }}>
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Flower Garden</Text>
-        </View>
+  const currentItem = items[currentIndex];
+  const isEmoji = (str: string) => str && str.length <= 4 && !str.includes('/') && !str.startsWith('http');
 
-        <View style={styles.mainContent}>
-          <RocketButton direction="left" onPress={handlePrev} styles={styles} />
-          
-          {items[currentIndex] && (
-            <FlowerCard item={items[currentIndex]} styles={styles} />
+  const NavButton = ({ direction, disabled }: { direction: 'left' | 'right'; disabled: boolean }) => {
+    const animVar = direction === 'left' ? leftBtnPush : rightBtnPush;
+    return (
+      <TouchableOpacity
+        activeOpacity={1}
+        onPress={() => animateNavButton(animVar, direction === 'left' ? handlePrev : handleNext)}
+        disabled={disabled}
+        style={[styles.arrow3DContainer, disabled && { opacity: 0.3 }]}
+      >
+        <View style={styles.arrow3DShadow} />
+        <Animated.View style={[styles.arrow3DFace, { transform: [{ translateY: animVar }] }]}>
+          {direction === 'left' ? (
+            <ArrowLeft color="#7B5231" size={32} strokeWidth={4} />
+          ) : (
+            <ArrowRight color="#7B5231" size={32} strokeWidth={4} />
           )}
+        </Animated.View>
+      </TouchableOpacity>
+    );
+  };
 
-          <RocketButton direction="right" onPress={handleNext} styles={styles} />
-        </View>
+  return (
+    <View style={styles.container}>
+      {/* Background */}
+      <ImageBackground
+        source={{ uri: 'https://your-backend-or-cdn.com/garden_bg.png' }}
+        style={styles.backgroundImage}
+        resizeMode="cover"
+      >
+        <SafeAreaView style={styles.overlay}>
+          {/* Top Bar */}
+          <View style={styles.header}>
+            <View style={styles.headerLeft}>
+              <TouchableOpacity style={[styles.roundBtn, { backgroundColor: '#FFB300' }]}>
+                <Zap color="white" fill="white" size={22} />
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.roundBtn, { backgroundColor: '#F44336' }]}>
+                <Gamepad2 color="white" size={22} />
+              </TouchableOpacity>
+            </View>
 
-        {showConfetti && <ConfettiCannon count={100} origin={{ x: width / 2, y: 0 }} />}
-      </SafeAreaView>
-    </LinearGradient>
+            <TouchableOpacity style={styles.exitBtn}>
+              <X color="white" strokeWidth={5} size={24} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Main content */}
+          <View style={styles.content}>
+            <NavButton direction="left" disabled={currentIndex === 0} />
+
+            <Animated.View style={{ transform: [{ scale: scaleAnim }, { translateY: translateYAnim }] }}>
+              <TouchableOpacity activeOpacity={1} onPress={() => handlePress(currentItem)} style={styles.flowerContainer}>
+                {isEmoji(currentItem.imageUrl) ? (
+                  <Text style={styles.emojiText}>{currentItem.imageUrl}</Text>
+                ) : (
+                  <Image
+                    source={{
+                      uri: currentItem.imageUrl.startsWith('http')
+                        ? currentItem.imageUrl
+                        : `${BASE_URL}/${currentItem.imageUrl}`,
+                    }}
+                    style={styles.flowerImage}
+                    resizeMode="contain"
+                  />
+                )}
+              </TouchableOpacity>
+
+              {/* Bottom Badge */}
+              <Animated.View style={[styles.bottomBadge, { transform: [{ scale: badgeScale }, { translateY: translateYAnim }] }]}>
+                <Text style={styles.bottomBadgeText}>{currentItem.title.toUpperCase()}</Text>
+              </Animated.View>
+            </Animated.View>
+
+            <NavButton direction="right" disabled={currentIndex === items.length - 1} />
+          </View>
+        </SafeAreaView>
+      </ImageBackground>
+    </View>
   );
 }
 
-// ---------- Enhanced 3D Styles ----------
-const createStyles = (width: number) =>
-  StyleSheet.create({
-    container: { flex: 1 },
-    center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    header: { paddingVertical: 20, alignItems: 'center' },
-    headerTitle: { 
-      fontSize: width > 700 ? 42 : 32, 
-      fontWeight: '900', 
-      color: '#FF69B4',
-      textShadowColor: 'rgba(0,0,0,0.1)',
-      textShadowOffset: { width: 1, height: 2 },
-      textShadowRadius: 3
-    },
-    mainContent: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
-    
-    // Rocket Buttons
-    rocketContainer: {
-      position: 'absolute',
-      top: '40%',
-      zIndex: 10,
-      alignItems: 'center',
-      backgroundColor: 'rgba(255,255,255,0.7)',
-      padding: 12,
-      borderRadius: 25,
-      borderWidth: 3,
-      borderColor: '#FFF',
-    },
-    rocketEmoji: { fontSize: width > 700 ? 45 : 30 },
-    rocketText: { fontWeight: '900', color: '#FF69B4', fontSize: 10, marginTop: 4 },
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#E0F7FA' },
+  backgroundImage: { flex: 1 },
+  overlay: { flex: 1, paddingHorizontal: 30 },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
-    // Flower Card
-    cardContainer: { width: width * 0.7, alignItems: 'center' },
-    clayCard: {
-      width: '100%',
-      aspectRatio: 1,
-      backgroundColor: 'rgba(255,255,255,0.95)',
-      borderRadius: 60,
-      justifyContent: 'center',
-      alignItems: 'center',
-      borderWidth: 6,
-      borderColor: 'rgba(255, 255, 255, 0.6)',
-      ...Platform.select({
-        ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 15 }, shadowOpacity: 0.15, shadowRadius: 15 },
-        android: { elevation: 15 }
-      }),
-    },
-    imageWrapper: { width: '80%', height: '80%', justifyContent: 'center', alignItems: 'center' },
-    flowerImage: { width: '100%', height: '100%' },
-    emojiMain: { fontSize: width > 700 ? 140 : 100 },
-    nameTag: {
-      marginTop: -25,
-      backgroundColor: '#FFF',
-      paddingHorizontal: 25,
-      paddingVertical: 10,
-      borderRadius: 20,
-      elevation: 10,
-      shadowColor: '#000',
-      shadowOpacity: 0.1,
-      shadowRadius: 5,
-      shadowOffset: { width: 0, height: 4 }
-    },
-    flowerTitle: { color: '#333', fontWeight: '900', fontSize: 20, letterSpacing: 1 },
-  });
+  // Header
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 15,
+  },
+  headerLeft: { flexDirection: 'row', gap: 12 },
+  roundBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: 'white',
+    elevation: 4,
+  },
+  exitBtn: {
+    backgroundColor: '#FF5722',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: 'white',
+  },
+
+  // Main content
+  content: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 40,
+  },
+  flowerContainer: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  flowerImage: { width: 320, height: 280 },
+  emojiText: { fontSize: 160, textAlign: 'center' },
+
+  // 3D Navigation
+  arrow3DContainer: { width: 75, height: 65 },
+  arrow3DShadow: {
+    position: 'absolute',
+    bottom: 0,
+    width: 75,
+    height: 55,
+    backgroundColor: '#7B5231',
+    borderRadius: 18,
+  },
+  arrow3DFace: {
+    width: 75,
+    height: 58,
+    backgroundColor: '#F3D299',
+    borderRadius: 18,
+    borderWidth: 3,
+    borderColor: '#7B5231',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  // Bottom badge
+  bottomBadge: {
+    backgroundColor: '#FF003C',
+    paddingHorizontal: 40,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: 3,
+    borderColor: '#B3002A',
+    alignSelf: 'center',
+    marginBottom: 25,
+    elevation: 6,
+    marginTop: 20,
+  },
+  bottomBadgeText: {
+    color: 'white',
+    fontSize: 28,
+    fontWeight: '900',
+    letterSpacing: 1,
+    textAlign: 'center',
+  },
+});
