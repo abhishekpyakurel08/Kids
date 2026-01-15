@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useRef } from 'react';
 import {
   View, Text, Image, ImageBackground, StyleSheet,
-  ActivityIndicator, Animated, Modal, TouchableOpacity, SafeAreaView, StatusBar, Pressable
+  ActivityIndicator, Animated, Modal, TouchableOpacity, SafeAreaView, StatusBar, Pressable, BackHandler
 } from 'react-native';
 import { ArrowLeft, ArrowRight, X, Zap, Gamepad2 } from 'lucide-react-native';
+import { useNavigation } from '@react-navigation/native';
 import Sound from 'react-native-sound';
 import Orientation from 'react-native-orientation-locker';
 import { useContentStore } from '../store/useContentStore';
@@ -14,6 +15,7 @@ const isEmoji = (str: string) =>
   str && str.length <= 4 && !str.includes('/') && !str.startsWith('http');
 
 const AnimalSoundScreen = () => {
+  const navigation = useNavigation();
   const { items, loading, fetchByType } = useContentStore();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isQuitModalVisible, setQuitModalVisible] = useState(false);
@@ -22,6 +24,7 @@ const AnimalSoundScreen = () => {
   const leftBtnPush = useRef(new Animated.Value(0)).current;
   const rightBtnPush = useRef(new Animated.Value(0)).current;
   const soundCache = useRef<Record<string, Sound>>({});
+  const exitSound = useRef<Sound | null>(null);
 
   useEffect(() => {
     Orientation.lockToLandscape();
@@ -29,15 +32,27 @@ const AnimalSoundScreen = () => {
     fetchByType('animal', true);
     Sound.setCategory('Playback');
 
+    // Load the "Bye Bye" or "Click" sound for exiting
+    // Note: Ensure 'bye_bye.mp3' exists in your android/app/src/main/res/raw or ios bundle
+    exitSound.current = new Sound('bye_bye.mp3', Sound.MAIN_BUNDLE, (error) => {
+      if (error) console.log('Exit sound not found, skipping.');
+    });
+
+    const backAction = () => {
+      setQuitModalVisible(true);
+      return true;
+    };
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+
     return () => {
+      backHandler.remove();
       Orientation.unlockAllOrientations();
       StatusBar.setHidden(false);
-      // Release all sounds when leaving
       Object.values(soundCache.current).forEach(s => s.release());
+      if (exitSound.current) exitSound.current.release();
     };
   }, []);
 
-  // Pre-load sounds when items change
   useEffect(() => {
     items.forEach(item => {
       if (item.soundUrl && !soundCache.current[item._id]) {
@@ -60,6 +75,22 @@ const AnimalSoundScreen = () => {
         sound.play();
       });
     }
+  };
+
+  const handleQuit = () => {
+    // 1. Stop animal sounds
+    Object.values(soundCache.current).forEach(s => s.stop());
+
+    // 2. Play the Bye Bye sound
+    if (exitSound.current) {
+      exitSound.current.play();
+    }
+
+    // 3. Short delay so sound can start before screen closes
+    setTimeout(() => {
+      setQuitModalVisible(false);
+      navigation.goBack();
+    }, 800); 
   };
 
   const bounceAnimal = () => {
@@ -117,23 +148,14 @@ const AnimalSoundScreen = () => {
         resizeMode="cover"
       >
         <SafeAreaView style={styles.overlay}>
-          {/* Top Header */}
-          <View style={styles.header}>
-            <View style={styles.headerLeft}>
-              <TouchableOpacity style={[styles.roundBtn, { backgroundColor: '#FFB300' }]}><Zap color="white" fill="white" size={22} /></TouchableOpacity>
-              <TouchableOpacity style={[styles.roundBtn, { backgroundColor: '#F44336' }]}><Gamepad2 color="white" size={22} /></TouchableOpacity>
-            </View>
-
-            <View style={styles.redBadge}>
-              <Text style={styles.redBadgeText}>{currentItem.title.toUpperCase()}</Text>
-            </View>
+         <View style={styles.header}>
+        
 
             <TouchableOpacity style={styles.exitBtn} onPress={() => setQuitModalVisible(true)}>
               <X color="white" strokeWidth={5} size={24} />
             </TouchableOpacity>
           </View>
 
-          {/* Main Content with Pressable Animal */}
           <View style={styles.content}>
             <NavButton direction="left" disabled={currentIndex === 0} />
             
@@ -160,6 +182,10 @@ const AnimalSoundScreen = () => {
                   )}
                 </Animated.View>
               </Pressable>
+
+              <View style={styles.titleBottomWrapper}>
+                <Text style={styles.titleBottomText}>{currentItem.title.toUpperCase()}</Text>
+              </View>
             </View>
 
             <NavButton direction="right" disabled={currentIndex === items.length - 1} />
@@ -167,14 +193,25 @@ const AnimalSoundScreen = () => {
         </SafeAreaView>
       </ImageBackground>
 
-      {/* Basic Quit Modal */}
-      <Modal transparent visible={isQuitModalVisible} animationType="fade">
+      <Modal transparent visible={isQuitModalVisible} animationType="fade" onRequestClose={() => setQuitModalVisible(false)}>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalBox}>
-            <Text style={styles.modalTitle}>Continue playing?</Text>
-            <TouchableOpacity style={styles.modalBtn} onPress={() => setQuitModalVisible(false)}>
-              <Text style={styles.modalBtnText}>YES</Text>
-            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Leave the Safari? 👋</Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity 
+                style={[styles.modalBtn, { backgroundColor: '#4CAF50' }]} 
+                onPress={() => setQuitModalVisible(false)}
+              >
+                <Text style={styles.modalBtnText}>STAY</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[styles.modalBtn, { backgroundColor: '#F44336' }]} 
+                onPress={handleQuit}
+              >
+                <Text style={styles.modalBtnText}>BYE BYE!</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -190,8 +227,6 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 15 },
   headerLeft: { flexDirection: 'row', gap: 12 },
   roundBtn: { width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: 'white', elevation: 4 },
-  redBadge: { backgroundColor: '#FF003C', paddingHorizontal: 60, paddingVertical: 8, borderRadius: 20, borderWidth: 4, borderColor: '#B3002A', elevation: 8 },
-  redBadgeText: { color: 'white', fontSize: 26, fontWeight: '900', letterSpacing: 2 },
   exitBtn: { backgroundColor: '#FF5722', width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: 'white' },
   content: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
   animalContainer: { flex: 1, alignItems: 'center', justifyContent: 'center' },
@@ -200,11 +235,14 @@ const styles = StyleSheet.create({
   arrow3DContainer: { width: 75, height: 65 },
   arrow3DShadow: { position: 'absolute', bottom: 0, width: 75, height: 55, backgroundColor: '#7B5231', borderRadius: 18 },
   arrow3DFace: { width: 75, height: 58, backgroundColor: '#F3D299', borderRadius: 18, borderWidth: 3, borderColor: '#7B5231', justifyContent: 'center', alignItems: 'center' },
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' },
-  modalBox: { backgroundColor: 'white', padding: 30, borderRadius: 20, alignItems: 'center' },
-  modalTitle: { fontSize: 22, fontWeight: 'bold', marginBottom: 20 },
-  modalBtn: { backgroundColor: '#FF003C', paddingHorizontal: 40, paddingVertical: 10, borderRadius: 10 },
-  modalBtnText: { color: 'white', fontWeight: 'bold' }
+  titleBottomWrapper: { marginTop: 20, backgroundColor: '#FF003C', paddingHorizontal: 50, paddingVertical: 10, borderRadius: 25, borderWidth: 4, borderColor: '#B3002A', elevation: 8 },
+  titleBottomText: { color: 'white', fontSize: 26, fontWeight: '900', letterSpacing: 2, textAlign: 'center' },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center' },
+  modalBox: { backgroundColor: 'white', padding: 30, borderRadius: 30, alignItems: 'center', width: '50%', borderWidth: 5, borderColor: '#FFB300' },
+  modalTitle: { fontSize: 24, fontWeight: '900', marginBottom: 25, color: '#333' },
+  modalButtons: { flexDirection: 'row', gap: 20 },
+  modalBtn: { paddingHorizontal: 25, paddingVertical: 15, borderRadius: 15, elevation: 5 },
+  modalBtnText: { color: 'white', fontWeight: '900', fontSize: 16 }
 });
 
 export default AnimalSoundScreen;

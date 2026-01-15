@@ -1,276 +1,227 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  PanResponder,
-  SafeAreaView,
-  Alert,
-  Platform,
-  PermissionsAndroid,
   TouchableOpacity,
+  Animated,
+  Dimensions,
+  SafeAreaView,
+  StatusBar,
+  Modal,
+  BackHandler,
 } from 'react-native';
-import Animated, { BounceIn, FadeOut } from 'react-native-reanimated';
-import ViewShot, { captureRef } from 'react-native-view-shot';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { CameraRoll } from '@react-native-camera-roll/camera-roll';
+import { ChevronLeft, ChevronRight, X } from 'lucide-react-native';
+import Tts from 'react-native-tts';
+import Orientation from 'react-native-orientation-locker';
 
-// --- Types ---
-type Shape = {
-  x: number;
-  y: number;
-  emoji: string;
-  size: number;
-  id: string;
-  color: string;
-};
+const { width, height } = Dimensions.get('window');
+const ITEM_SIZE = Math.min(width * 0.6, height * 0.35);
 
-// --- Constants ---
-const EMOJI_SHAPES = ['⭐', '🌙', '🌈', '🍎', '🐶', '🚀', '🦄', '🎨'];
-const BACKGROUNDS = ['#0F172A', '#FEF3C7', '#ECFEFF', '#FCE7F3', '#111827'];
-const RAINBOW_COLORS = ['#FF0000', '#FF7F00', '#FFFF00', '#00FF00', '#0000FF', '#4B0082', '#8B00FF'];
+const SHAPES = [
+  { id: '1', name: 'Square', color: '#F7D716' },
+  { id: '2', name: 'Circle', color: '#FF4757' },
+  { id: '3', name: 'Triangle', color: '#2ED573' },
+  { id: '4', name: 'Heart', color: '#FF6B81' },
+];
 
-export default function KidsEmojiDrawing() {
-  const viewShotRef = useRef<ViewShot>(null);
-  const [shapes, setShapes] = useState<Shape[]>([]);
-  const [selectedEmoji, setSelectedEmoji] = useState<string>(EMOJI_SHAPES[0]);
-  const [bgIndex, setBgIndex] = useState(0);
-  const [eraser, setEraser] = useState(false);
+export default function ShapesScreen({ navigation }: any) {
+  const [index, setIndex] = useState(0);
+  const [isQuitModalVisible, setQuitModalVisible] = useState(false);
+  const scale = useRef(new Animated.Value(1)).current;
 
-  // Sync state to Ref to prevent stale closures in PanResponder
-  const stateRef = useRef({ selectedEmoji, eraser, shapes });
-  stateRef.current = { selectedEmoji, eraser, shapes };
+  useEffect(() => {
+    Orientation.lockToLandscape();
+    
+    // Initializing high-quality kid-friendly TTS settings
+    Tts.getInitStatus().then(() => {
+      Tts.setDefaultRate(0.48); // Clear but energetic
+      Tts.setDefaultPitch(1.35); // Cute, high-pitched mascot voice
+      speak(); // Speak first shape
+    });
 
-  const lastPoint = useRef<{ x: number; y: number; time: number } | null>(null);
-  const rainbowIndex = useRef(0);
-
-  // --- Drawing Logic ---
-  const handleTouch = (x: number, y: number) => {
-    const { eraser: isEraser, selectedEmoji: currentEmoji } = stateRef.current;
-
-    if (isEraser) {
-      setShapes((prev) => prev.filter((s) => Math.hypot(s.x - x, s.y - y) > 35));
-      return;
-    }
-
-    const now = Date.now();
-    let speed = 0.5;
-
-    if (lastPoint.current) {
-      const dx = x - lastPoint.current.x;
-      const dy = y - lastPoint.current.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-      
-      // Prevent overlapping; only draw if moved enough
-      if (distance < 25) return; 
-      
-      speed = distance / Math.max(now - lastPoint.current.time, 1);
-    }
-    lastPoint.current = { x, y, time: now };
-
-    const color = RAINBOW_COLORS[rainbowIndex.current];
-    rainbowIndex.current = (rainbowIndex.current + 1) % RAINBOW_COLORS.length;
-
-    const newShape: Shape = {
-      x,
-      y,
-      emoji: currentEmoji,
-      size: Math.min(80, Math.max(35, 100 - speed * 15)),
-      id: `${now}-${Math.random()}`,
-      color,
+    const backAction = () => {
+      setQuitModalVisible(true);
+      return true;
     };
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
 
-    setShapes((prev) => [...prev, newShape]);
-  };
+    return () => {
+      backHandler.remove();
+      Orientation.unlockAllOrientations();
+      Tts.stop();
+    };
+  }, []);
 
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: (e) => handleTouch(e.nativeEvent.locationX, e.nativeEvent.locationY),
-      onPanResponderMove: (e) => handleTouch(e.nativeEvent.locationX, e.nativeEvent.locationY),
-      onPanResponderRelease: () => { 
-        lastPoint.current = null; 
-      },
-    })
-  ).current;
-
-  // --- Save Function ---
-  const saveDrawing = async () => {
-    try {
-      if (Platform.OS === 'android') {
-        // Safe conversion for Platform.Version
-        const rawVersion = Platform.Version;
-        const version = typeof rawVersion === 'string' ? parseInt(rawVersion, 10) : rawVersion;
-
-        const perm = version >= 33 
-          ? PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES 
-          : PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE;
-          
-        const status = await PermissionsAndroid.request(perm);
-        if (status !== 'granted') {
-          Alert.alert('Permission Denied', 'Gallery access is needed to save art.');
-          return;
-        }
-      }
-
-      if (viewShotRef.current) {
-        const uri = await captureRef(viewShotRef, { format: 'png', quality: 0.9 });
-        await CameraRoll.save(uri, { type: 'photo' });
-        Alert.alert('Saved! 📸', 'Your masterpiece is in your gallery!');
-      }
-    } catch (err) {
-      Alert.alert('Error', 'Could not save photo');
-      console.error(err);
+  // Effect to trigger speech and animation on every change
+  useEffect(() => {
+    if (!isQuitModalVisible) {
+      speak();
     }
+  }, [index]);
+
+  const speak = () => {
+    Tts.stop();
+    Tts.speak(SHAPES[index].name);
+    
+    // Tactile "Pop" Animation
+    Animated.sequence([
+      Animated.timing(scale, { toValue: 0.8, duration: 100, useNativeDriver: true }),
+      Animated.spring(scale, { 
+        toValue: 1.1, 
+        friction: 4, 
+        tension: 40, 
+        useNativeDriver: true 
+      }),
+      Animated.spring(scale, { 
+        toValue: 1, 
+        friction: 3, 
+        useNativeDriver: true 
+      }),
+    ]).start();
   };
+
+  const handleQuit = () => {
+    Tts.stop();
+    Tts.speak("Bye Bye!"); 
+    setQuitModalVisible(false);
+    
+    setTimeout(() => {
+      navigation.goBack();
+    }, 900);
+  };
+
+  const prev = () => index > 0 && setIndex(i => i - 1);
+  const next = () => index < SHAPES.length - 1 && setIndex(i => i + 1);
+
+  const shape = SHAPES[index];
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaView style={styles.container}>
-        
-        {/* TOP BAR */}
-        <View style={styles.topBar}>
-          <Text style={styles.title}>🎨 STUDIO</Text>
-          <View style={styles.row}>
-            <TouchableOpacity 
-              style={[styles.toolBtn, eraser && styles.activeTool]} 
-              onPress={() => setEraser(!eraser)}
-            >
-              <Text style={styles.toolText}>{eraser ? '✏️ Draw' : '🧽 Erase'}</Text>
+    <View style={styles.container}>
+      <StatusBar hidden />
+
+      <SafeAreaView style={{ flex: 1 }}>
+        <View style={styles.header}>
+          <View style={styles.iconRow}>
+           
+          </View>
+          
+          <TouchableOpacity 
+            style={styles.close} 
+            onPress={() => setQuitModalVisible(true)}
+            activeOpacity={0.7}
+          >
+            <X color="white" size={26} strokeWidth={5} />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.center}>
+          <Animated.View style={{ transform: [{ scale }] }}>
+            <TouchableOpacity activeOpacity={0.9} onPress={speak}>
+                {shape.name === 'Square' && <Square color={shape.color} />}
+                {shape.name === 'Circle' && <Circle color={shape.color} />}
+                {shape.name === 'Triangle' && <Triangle color={shape.color} />}
+                {shape.name === 'Heart' && <Heart color={shape.color} />}
             </TouchableOpacity>
-            <TouchableOpacity style={styles.toolBtn} onPress={() => setShapes([])}>
-              <Text style={styles.toolText}>🗑️ Clear</Text>
-            </TouchableOpacity>
+          </Animated.View>
+        </View>
+
+        <View style={styles.arrows}>
+          <TouchableOpacity 
+            onPress={prev} 
+            disabled={index === 0} 
+            style={[styles.arrowBtn, index === 0 && styles.disabled]}
+          >
+            <ChevronLeft color="#5D3A1A" size={38} strokeWidth={6} />
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            onPress={next} 
+            disabled={index === SHAPES.length - 1} 
+            style={[styles.arrowBtn, index === SHAPES.length - 1 && styles.disabled]}
+          >
+            <ChevronRight color="#5D3A1A" size={38} strokeWidth={6} />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.footer}>
+          <View style={styles.pill}>
+            <Text style={styles.pillText}>{shape.name.toUpperCase()}</Text>
           </View>
         </View>
 
-        {/* EMOJI SELECTOR */}
-        <View style={styles.selectorRow}>
-          {EMOJI_SHAPES.map((emoji) => (
-            <TouchableOpacity
-              key={emoji}
-              style={[
-                styles.shapeBtn, 
-                selectedEmoji === emoji && !eraser && styles.selectedShape
-              ]}
-              onPress={() => {
-                setEraser(false);
-                setSelectedEmoji(emoji);
-              }}
-            >
-              <Text style={{ fontSize: 28 }}>{emoji}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* DRAWING CANVAS */}
-        <View style={styles.canvasContainer}>
-          <ViewShot ref={viewShotRef} style={{ flex: 1 }}>
-            <View
-              style={[styles.drawingBoard, { backgroundColor: BACKGROUNDS[bgIndex] }]}
-              {...panResponder.panHandlers}
-            >
-              {shapes.map((s) => (
-                <Animated.Text
-                  key={s.id}
-                  entering={BounceIn}
-                  exiting={FadeOut}
-                  style={[styles.emoji, { 
-                    left: s.x - s.size / 2, 
-                    top: s.y - s.size / 2, 
-                    fontSize: s.size, 
-                    color: s.color 
-                  }]}
+        {/* QUIT MODAL */}
+        <Modal transparent visible={isQuitModalVisible} animationType="fade">
+          <View style={styles.modalBackdrop}>
+            <View style={styles.modalBox}>
+              <Text style={styles.modalTitle}>Done playing? 👋</Text>
+              <View style={styles.modalButtons}>
+                <TouchableOpacity 
+                  style={[styles.modalBtn, { backgroundColor: '#4CAF50' }]} 
+                  onPress={() => setQuitModalVisible(false)}
                 >
-                  {s.emoji}
-                </Animated.Text>
-              ))}
+                  <Text style={styles.modalBtnText}>STAY</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={[styles.modalBtn, { backgroundColor: '#FF5C00' }]} 
+                  onPress={handleQuit}
+                >
+                  <Text style={styles.modalBtnText}>BYE BYE</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          </ViewShot>
-        </View>
-
-        {/* BOTTOM BAR */}
-        <View style={styles.bottomBar}>
-          <TouchableOpacity 
-            style={styles.bgBtn} 
-            onPress={() => setBgIndex((i) => (i + 1) % BACKGROUNDS.length)}
-          >
-            <Text style={styles.toolText}>🖼️ BG Color</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.saveBtn} onPress={saveDrawing}>
-            <Text style={styles.saveText}>📸 Save Art</Text>
-          </TouchableOpacity>
-        </View>
-
+          </View>
+        </Modal>
       </SafeAreaView>
-    </GestureHandlerRootView>
+    </View>
   );
 }
 
+/* ---------- SHAPE COMPONENTS ---------- */
+const Square = ({ color }: any) => <View style={[styles.square, { backgroundColor: color }]} />;
+const Circle = ({ color }: any) => <View style={[styles.circle, { backgroundColor: color }]} />;
+const Triangle = ({ color }: any) => (
+  <View style={styles.triangleWrap}>
+    <View style={[styles.triangle, { borderBottomColor: color }]} />
+  </View>
+);
+const Heart = ({ color }: any) => (
+  <View style={styles.heartWrap}>
+    <View style={[styles.heartCircle, styles.heartLeft, { backgroundColor: color }]} />
+    <View style={[styles.heartCircle, styles.heartRight, { backgroundColor: color }]} />
+    <View style={[styles.heartSquare, { backgroundColor: color }]} />
+  </View>
+);
+
+/* ---------- STYLES ---------- */
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#020617' },
-  topBar: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    padding: 15, 
-    alignItems: 'center' 
-  },
-  row: { flexDirection: 'row' },
-  title: { fontSize: 22, fontWeight: 'bold', color: '#FFD700' },
-  toolBtn: { 
-    backgroundColor: '#334155', 
-    padding: 10, 
-    borderRadius: 10, 
-    marginLeft: 10 
-  },
-  activeTool: { backgroundColor: '#ef4444' },
-  toolText: { color: 'white', fontWeight: 'bold' },
-  selectorRow: { 
-    flexDirection: 'row', 
-    flexWrap: 'wrap', 
-    justifyContent: 'center', 
-    marginBottom: 10 
-  },
-  shapeBtn: { 
-    margin: 5, 
-    padding: 8, 
-    borderRadius: 15, 
-    backgroundColor: '#1e293b', 
-    borderWidth: 2, 
-    borderColor: 'transparent' 
-  },
-  selectedShape: { borderColor: '#FFD700', backgroundColor: '#334155' },
-  canvasContainer: { 
-    flex: 1, 
-    marginHorizontal: 15, 
-    borderRadius: 25, 
-    overflow: 'hidden',
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-  },
-  drawingBoard: { flex: 1 },
-  emoji: { position: 'absolute' },
-  bottomBar: { 
-    flexDirection: 'row', 
-    padding: 20, 
-    justifyContent: 'space-between',
-    alignItems: 'center'
-  },
-  bgBtn: { 
-    backgroundColor: '#334155', 
-    paddingVertical: 12, 
-    paddingHorizontal: 20, 
-    borderRadius: 15 
-  },
-  saveBtn: { 
-    backgroundColor: '#22C55E', 
-    paddingVertical: 12, 
-    paddingHorizontal: 25, 
-    borderRadius: 15 
-  },
-  saveText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
+  container: { flex: 1, backgroundColor: '#FFF' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', padding: 18 },
+  iconRow: { flexDirection: 'row', gap: 12 },
+  emoji: { fontSize: 20 },
+  roundIcon: { width: 44, height: 44, borderRadius: 22, borderWidth: 2, borderColor: '#eee', justifyContent: 'center', alignItems: 'center' },
+  close: { width: 46, height: 46, backgroundColor: '#FF5C00', borderRadius: 23, borderWidth: 4, borderColor: '#fff', justifyContent: 'center', alignItems: 'center', elevation: 5 },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  square: { width: ITEM_SIZE, height: ITEM_SIZE, borderRadius: 25, elevation: 8, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 10 },
+  circle: { width: ITEM_SIZE, height: ITEM_SIZE, borderRadius: ITEM_SIZE / 2, elevation: 8 },
+  triangleWrap: { width: ITEM_SIZE, height: ITEM_SIZE, alignItems: 'center', justifyContent: 'center' },
+  triangle: { width: 0, height: 0, borderLeftWidth: ITEM_SIZE / 2, borderRightWidth: ITEM_SIZE / 2, borderBottomWidth: ITEM_SIZE, borderLeftColor: 'transparent', borderRightColor: 'transparent' },
+  heartWrap: { width: ITEM_SIZE, height: ITEM_SIZE, alignItems: 'center', justifyContent: 'center' },
+  heartCircle: { position: 'absolute', width: ITEM_SIZE * 0.45, height: ITEM_SIZE * 0.45, borderRadius: (ITEM_SIZE * 0.45) / 2, top: ITEM_SIZE * 0.15 },
+  heartLeft: { left: ITEM_SIZE * 0.15 },
+  heartRight: { right: ITEM_SIZE * 0.15 },
+  heartSquare: { position: 'absolute', width: ITEM_SIZE * 0.45, height: ITEM_SIZE * 0.45, top: ITEM_SIZE * 0.35, transform: [{ rotate: '45deg' }], borderRadius: 5 },
+  arrows: { position: 'absolute', top: '45%', width: '100%', flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 20 },
+  arrowBtn: { width: 75, height: 60, backgroundColor: '#F3D299', borderRadius: 20, borderWidth: 4, borderColor: '#5D3A1A', justifyContent: 'center', alignItems: 'center', elevation: 4 },
+  disabled: { opacity: 0.2 },
+  footer: { alignItems: 'center', marginBottom: 25 },
+  pill: { backgroundColor: '#FF0043', paddingHorizontal: 60, paddingVertical: 12, borderRadius: 40, borderWidth: 5, borderColor: '#B3002A', elevation: 5 },
+  pillText: { color: '#fff', fontSize: 32, fontWeight: '900', letterSpacing: 2 },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' },
+  modalBox: { backgroundColor: 'white', padding: 30, borderRadius: 35, alignItems: 'center', width: '50%', borderWidth: 6, borderColor: '#FFA502' },
+  modalTitle: { fontSize: 26, fontWeight: '900', marginBottom: 25, color: '#333' },
+  modalButtons: { flexDirection: 'row', gap: 20 },
+  modalBtn: { paddingHorizontal: 35, paddingVertical: 15, borderRadius: 20, elevation: 4 },
+  modalBtnText: { color: 'white', fontWeight: '900', fontSize: 18 }
 });

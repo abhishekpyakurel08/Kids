@@ -1,18 +1,27 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  StyleSheet, View, Text, TouchableOpacity, SafeAreaView,
-  StatusBar, Animated, ActivityIndicator, ImageBackground
+  StyleSheet,
+  View,
+  Text,
+  TouchableOpacity,
+  SafeAreaView,
+  StatusBar,
+  Animated,
+  ActivityIndicator,
+  ImageBackground,
 } from 'react-native';
 import Tts from 'react-native-tts';
-import { ArrowLeft, ArrowRight, X, Zap, Gamepad2 } from 'lucide-react-native';
+import { ArrowLeft, ArrowRight, X } from 'lucide-react-native';
 import Orientation from 'react-native-orientation-locker';
 import { useContentStore } from '../store/useContentStore';
+import { useNavigation } from '@react-navigation/native';
 
 const BASE_URL = 'https://kiddsapp-backend.tecobit.cloud';
 
 const BirdScreen = () => {
   const { items, loading, fetchByType } = useContentStore();
   const [index, setIndex] = useState(0);
+  const navigation = useNavigation();
 
   // Animation values
   const scaleAnim = useRef(new Animated.Value(1)).current;
@@ -20,6 +29,7 @@ const BirdScreen = () => {
   const badgeScale = useRef(new Animated.Value(1)).current;
   const leftBtnPush = useRef(new Animated.Value(0)).current;
   const rightBtnPush = useRef(new Animated.Value(0)).current;
+  const exitBtnPush = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Orientation.lockToLandscape();
@@ -41,17 +51,20 @@ const BirdScreen = () => {
   }
 
   const currentBird = items[index];
-  const isEmoji = (str: string) => str && str.length <= 4 && !str.includes('/') && !str.startsWith('http');
 
+  const isEmoji = (str: string) =>
+    str && str.length <= 4 && !str.includes('/') && !str.startsWith('http');
+
+  // Navigation arrows
   const handleNav = (dir: 'next' | 'prev', animVar: Animated.Value) => {
     Animated.sequence([
       Animated.timing(animVar, { toValue: 5, duration: 100, useNativeDriver: true }),
       Animated.timing(animVar, { toValue: 0, duration: 100, useNativeDriver: true }),
     ]).start(() => {
-      if (dir === 'next' && index < items.length - 1) setIndex(index + 1);
-      if (dir === 'prev' && index > 0) setIndex(index - 1);
+      if (dir === 'next' && index < items.length - 1) setIndex(prev => prev + 1);
+      if (dir === 'prev' && index > 0) setIndex(prev => prev - 1);
 
-      // Trigger slide-up and badge animation
+      // Animate slide-up and badge
       translateYAnim.setValue(20);
       badgeScale.setValue(0.8);
       Animated.spring(translateYAnim, { toValue: 0, friction: 5, useNativeDriver: true }).start();
@@ -59,47 +72,54 @@ const BirdScreen = () => {
     });
   };
 
+  // Tap bird to speak & bounce
   const speakAndBounce = () => {
     Tts.stop();
-    Tts.speak(currentBird.title || 'Bird');
-    
+    Tts.speak(currentBird?.title || 'Bird');
+
     Animated.sequence([
       Animated.timing(scaleAnim, { toValue: 1.1, duration: 100, useNativeDriver: true }),
       Animated.spring(scaleAnim, { toValue: 1, friction: 3, useNativeDriver: true }),
     ]).start();
   };
 
+  // Exit button: instantly stop TTS and go back
+  const handleExit = () => {
+    Tts.stop();
+    Animated.sequence([
+      Animated.timing(exitBtnPush, { toValue: 5, duration: 100, useNativeDriver: true }),
+      Animated.timing(exitBtnPush, { toValue: 0, duration: 100, useNativeDriver: true }),
+    ]).start(() => navigation.goBack());
+  };
+
   return (
     <View style={styles.container}>
-      <ImageBackground 
-        source={{ uri: 'https://i.imgur.com/your_landscape_bg.png' }} 
+      <ImageBackground
+        source={{ uri: 'https://i.imgur.com/your_landscape_bg.png' }}
         style={styles.flex}
         resizeMode="cover"
       >
         <SafeAreaView style={styles.flex}>
-          
           {/* HEADER */}
           <View style={styles.header}>
-            <View style={styles.headerLeft}>
-              <TouchableOpacity style={[styles.roundBtn, { backgroundColor: '#FFB300' }]}>
-                <Zap color="white" fill="white" size={20} />
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.roundBtn, { backgroundColor: '#F44336' }]}>
-                <Gamepad2 color="white" size={20} />
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity style={styles.exitBtn}>
-              <X color="white" strokeWidth={5} size={22} />
+            <TouchableOpacity activeOpacity={1} onPress={handleExit}>
+              <Animated.View style={{ transform: [{ translateY: exitBtnPush }] }}>
+                <View style={styles.exitBtn}>
+                  <X color="white" strokeWidth={5} size={22} />
+                </View>
+              </Animated.View>
             </TouchableOpacity>
           </View>
 
           {/* INTERACTION CONTENT */}
           <View style={styles.content}>
-            
             {/* LEFT ARROW */}
-            <TouchableOpacity activeOpacity={1} onPress={() => handleNav('prev', leftBtnPush)} disabled={index === 0}>
-              <View style={[styles.navBtn3D, index === 0 && { opacity: 0.5 }]}>
+            <TouchableOpacity
+              activeOpacity={1}
+              onPress={() => handleNav('prev', leftBtnPush)}
+              disabled={index === 0}
+            >
+              <View style={[styles.navBtn3D, index === 0 && { opacity: 0.3 }]}>
                 <View style={styles.btnShadow} />
                 <Animated.View style={[styles.btnFace, { transform: [{ translateY: leftBtnPush }] }]}>
                   <ArrowLeft color="#7B5231" size={35} strokeWidth={4} />
@@ -110,11 +130,15 @@ const BirdScreen = () => {
             {/* CHARACTER/EMOJI */}
             <TouchableOpacity activeOpacity={1} onPress={speakAndBounce} style={styles.displayArea}>
               <Animated.View style={{ transform: [{ scale: scaleAnim }, { translateY: translateYAnim }] }}>
-                {isEmoji(currentBird.imageUrl) ? (
-                  <Text style={styles.emojiText}>{currentBird.imageUrl}</Text>
+                {isEmoji(currentBird?.imageUrl || '') ? (
+                  <Text style={styles.emojiText}>{currentBird?.imageUrl}</Text>
                 ) : (
                   <Animated.Image
-                    source={{ uri: currentBird.imageUrl.startsWith('http') ? currentBird.imageUrl : `${BASE_URL}/${currentBird.imageUrl}` }}
+                    source={{
+                      uri: currentBird?.imageUrl?.startsWith('http')
+                        ? currentBird.imageUrl
+                        : `${BASE_URL}/${currentBird.imageUrl}`,
+                    }}
                     style={styles.mainImage}
                     resizeMode="contain"
                   />
@@ -123,8 +147,12 @@ const BirdScreen = () => {
             </TouchableOpacity>
 
             {/* RIGHT ARROW */}
-            <TouchableOpacity activeOpacity={1} onPress={() => handleNav('next', rightBtnPush)} disabled={index === items.length - 1}>
-              <View style={[styles.navBtn3D, index === items.length - 1 && { opacity: 0.5 }]}>
+            <TouchableOpacity
+              activeOpacity={1}
+              onPress={() => handleNav('next', rightBtnPush)}
+              disabled={index === items.length - 1}
+            >
+              <View style={[styles.navBtn3D, index === items.length - 1 && { opacity: 0.3 }]}>
                 <View style={styles.btnShadow} />
                 <Animated.View style={[styles.btnFace, { transform: [{ translateY: rightBtnPush }] }]}>
                   <ArrowRight color="#7B5231" size={35} strokeWidth={4} />
@@ -135,14 +163,13 @@ const BirdScreen = () => {
 
           {/* BOTTOM BADGE */}
           <Animated.View style={[styles.bottomBadge, { transform: [{ scale: badgeScale }, { translateY: translateYAnim }] }]}>
-            <Text style={styles.bottomBadgeText}>{currentBird.title?.toUpperCase()}</Text>
+            <Text style={styles.bottomBadgeText}>{currentBird?.title?.toUpperCase()}</Text>
           </Animated.View>
 
           {/* GRASS FOOTER */}
           <View style={styles.grassFooter}>
             <Text style={styles.grassText}>🌱🌿🌻☘️🌵🌷🍀🌿🌱🌻🌱🌿🌻☘️🌵🌷🍀🌿🌱🌻</Text>
           </View>
-
         </SafeAreaView>
       </ImageBackground>
     </View>
@@ -156,8 +183,6 @@ const styles = StyleSheet.create({
 
   // HEADER
   header: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 10, alignItems: 'center' },
-  headerLeft: { flexDirection: 'row', gap: 10 },
-  roundBtn: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: 'white', elevation: 4 },
   exitBtn: { backgroundColor: '#FF5722', width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: 'white' },
 
   // CONTENT

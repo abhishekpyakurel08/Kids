@@ -119,7 +119,7 @@ export const useContentStore = create<ContentState>()(
         if (reset) set({ items: [], page: 1, hasMore: true });
 
         try {
-          const res = await axios.get(API_URL, { params: { type, page: 1, limit: 20 } });
+          const res = await axios.get(API_URL, { params: { type, page: 1, limit: 26 } });
           const content: ContentItem[] = res.data.content || [];
 
           const key = `${CACHE_PREFIX}${type}`;

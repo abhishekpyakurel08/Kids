@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { X } from 'lucide-react-native';
+import { ArrowLeft } from 'lucide-react-native';
 
 export default function AlphabetMenuScreen() {
   const navigation = useNavigation<any>();
@@ -15,9 +15,11 @@ export default function AlphabetMenuScreen() {
       </View>
 
       <SafeAreaView style={styles.content}>
-        {/* BACK TO HOME */}
+        {/* BACK TO HOME - Top Left */}
         <TouchableOpacity style={styles.closeBtn} onPress={() => navigation.navigate('Home')}>
-          <View style={styles.closeCircle}><X color="white" size={30} strokeWidth={4} /></View>
+          <View style={styles.closeCircle}>
+            <ArrowLeft color="white" size={30} strokeWidth={4} />
+          </View>
         </TouchableOpacity>
 
         <View style={styles.cardWrapper}>
@@ -31,7 +33,9 @@ export default function AlphabetMenuScreen() {
               <Text style={[styles.bigChar, { color: '#10B981' }]}>B</Text>
               <Text style={[styles.bigChar, { color: '#FF7F00' }]}>C</Text>
             </View>
-            <View style={styles.cardFooter}><Text style={styles.footerLabel}>Alphabets</Text></View>
+            <View style={styles.cardFooter}>
+              <Text style={styles.footerLabel}>Alphabets</Text>
+            </View>
           </TouchableOpacity>
 
           {/* TO PHONICS */}
@@ -44,7 +48,9 @@ export default function AlphabetMenuScreen() {
               <Text style={styles.arrowText}>→</Text>
               <Text style={styles.emojiText}>🍎</Text>
             </View>
-            <View style={styles.cardFooter}><Text style={styles.footerLabel}>Phonics</Text></View>
+            <View style={styles.cardFooter}>
+              <Text style={styles.footerLabel}>Phonics</Text>
+            </View>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -58,13 +64,39 @@ const styles = StyleSheet.create({
   shelfLine: { height: 8, backgroundColor: 'rgba(255,255,255,0.2)', marginBottom: 140, borderRadius: 4 },
   content: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   cardWrapper: { flexDirection: 'row', gap: 40 },
-  menuCard: { width: 320, height: 220, borderRadius: 40, borderWidth: 6, borderColor: 'white', elevation: 10, overflow: 'hidden', justifyContent: 'center', alignItems: 'center' },
+  menuCard: { 
+    width: 320, 
+    height: 220, 
+    borderRadius: 40, 
+    borderWidth: 6, 
+    borderColor: 'white', 
+    elevation: 10, 
+    overflow: 'hidden', 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
   visualArea: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 20 },
   bigChar: { fontSize: 80, fontWeight: '900', color: 'white' },
   arrowText: { fontSize: 40, color: 'white' },
   emojiText: { fontSize: 70 },
-  cardFooter: { position: 'absolute', bottom: 0, width: '100%', backgroundColor: 'rgba(0,0,0,0.15)', paddingVertical: 12, alignItems: 'center' },
+  cardFooter: { 
+    position: 'absolute', 
+    bottom: 0, 
+    width: '100%', 
+    backgroundColor: 'rgba(0,0,0,0.15)', 
+    paddingVertical: 12, 
+    alignItems: 'center' 
+  },
   footerLabel: { color: 'white', fontSize: 28, fontWeight: '900' },
-  closeBtn: { position: 'absolute', top: 20, right: 30 },
-  closeCircle: { backgroundColor: '#FF7F00', width: 55, height: 55, borderRadius: 28, justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: 'white' }
+  closeBtn: { position: 'absolute', top: 20, left: 20 }, // moved to top-left
+  closeCircle: { 
+    backgroundColor: '#FF7F00', 
+    width: 55, 
+    height: 55, 
+    borderRadius: 28, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    borderWidth: 3, 
+    borderColor: 'white' 
+  }
 });

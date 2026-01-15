@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   StatusBar,
+  Modal,
+  BackHandler,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { GestureHandlerRootView, PanGestureHandler } from 'react-native-gesture-handler';
@@ -14,6 +16,7 @@ import Animated, { useSharedValue, useAnimatedStyle, withSpring, runOnJS } from 
 import FastImage from 'react-native-fast-image';
 import Tts from 'react-native-tts';
 import Orientation from 'react-native-orientation-locker';
+import { X } from 'lucide-react-native'; // Ensure lucide-react-native is installed
 import { useContentStore } from '../store/useContentStore';
 
 const { width, height } = Dimensions.get('window');
@@ -23,16 +26,27 @@ export default function FruitScreen({ navigation }: any) {
   const { items, loading, fetchByType } = useContentStore();
   const [fruits, setFruits] = useState<any[]>([]);
   const [index, setIndex] = useState(0);
+  const [isQuitModalVisible, setQuitModalVisible] = useState(false);
 
   const translateX = useSharedValue(0);
-
-  // Dynamic emoji size
   const EMOJI_SIZE = Math.min(width, height) * 0.25;
 
   useEffect(() => {
     Orientation.lockToLandscape();
     fetchByType('fruit', true);
-    return () => Orientation.unlockAllOrientations();
+
+    // Handle Android Hardware Back Button
+    const backAction = () => {
+      setQuitModalVisible(true);
+      return true;
+    };
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+
+    return () => {
+      backHandler.remove();
+      Orientation.unlockAllOrientations();
+      Tts.stop();
+    };
   }, []);
 
   useEffect(() => {
@@ -44,12 +58,24 @@ export default function FruitScreen({ navigation }: any) {
 
   const currentFruit = fruits[index];
 
+  // Speak fruit name on index change
   useEffect(() => {
-    if (currentFruit) {
+    if (currentFruit && !isQuitModalVisible) {
       Tts.stop();
       Tts.speak(currentFruit.title);
     }
-  }, [index, currentFruit]);
+  }, [index, currentFruit, isQuitModalVisible]);
+
+  const handleQuit = () => {
+    Tts.stop();
+    Tts.speak("Bye Bye!"); // TTS says "Bye Bye"
+    setQuitModalVisible(false);
+    
+    // Small delay to allow TTS to start before screen closes
+    setTimeout(() => {
+      navigation.goBack();
+    }, 1000);
+  };
 
   const next = () => setIndex(i => (i + 1) % fruits.length);
   const prev = () => setIndex(i => (i - 1 + fruits.length) % fruits.length);
@@ -64,7 +90,7 @@ export default function FruitScreen({ navigation }: any) {
     transform: [{ translateX: translateX.value }],
   }));
 
-  const isEmoji = currentFruit?.imageUrl?.length <= 2;
+  const isEmoji = currentFruit?.imageUrl?.length <= 4; // Improved emoji detection
 
   const imageUrl = currentFruit?.imageUrl
     ? currentFruit.imageUrl.startsWith('http')
@@ -84,6 +110,16 @@ export default function FruitScreen({ navigation }: any) {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaView style={styles.container}>
         <StatusBar hidden />
+
+        {/* TOP HEADER WITH X BUTTON */}
+        <View style={styles.header}>
+          <TouchableOpacity 
+            style={styles.exitBtn} 
+            onPress={() => setQuitModalVisible(true)}
+          >
+            <X color="white" strokeWidth={4} size={30} />
+          </TouchableOpacity>
+        </View>
 
         {/* LEFT ARROW */}
         <TouchableOpacity style={[styles.arrow, { left: 30 }]} onPress={prev}>
@@ -119,6 +155,31 @@ export default function FruitScreen({ navigation }: any) {
         <View style={styles.label}>
           <Text style={styles.labelText}>{currentFruit.title.toUpperCase()}</Text>
         </View>
+
+        {/* QUIT MODAL */}
+        <Modal transparent visible={isQuitModalVisible} animationType="fade">
+          <View style={styles.modalBackdrop}>
+            <View style={styles.modalBox}>
+              <Text style={styles.modalTitle}>Want to go back? 👋</Text>
+              <View style={styles.modalButtons}>
+                <TouchableOpacity 
+                  style={[styles.modalBtn, { backgroundColor: '#4CAF50' }]} 
+                  onPress={() => setQuitModalVisible(false)}
+                >
+                  <Text style={styles.modalBtnText}>PLAY</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={[styles.modalBtn, { backgroundColor: '#F44336' }]} 
+                  onPress={handleQuit}
+                >
+                  <Text style={styles.modalBtnText}>BYE BYE</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
       </SafeAreaView>
     </GestureHandlerRootView>
   );
@@ -130,6 +191,23 @@ const styles = StyleSheet.create({
     backgroundColor: '#87CEFA',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  header: {
+    position: 'absolute',
+    top: 20,
+    right: 20,
+    zIndex: 20,
+  },
+  exitBtn: {
+    backgroundColor: '#FF5722',
+    width: 55,
+    height: 55,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 4,
+    borderColor: 'white',
+    elevation: 5,
   },
   center: {
     flex: 1,
@@ -152,11 +230,13 @@ const styles = StyleSheet.create({
   },
   label: {
     position: 'absolute',
-    bottom: 40,
+    bottom: 30,
     backgroundColor: '#E11D48',
     paddingHorizontal: 60,
-    paddingVertical: 18,
+    paddingVertical: 12,
     borderRadius: 40,
+    borderWidth: 4,
+    borderColor: '#B3002A',
   },
   labelText: {
     color: '#fff',
@@ -166,7 +246,7 @@ const styles = StyleSheet.create({
   },
   arrow: {
     position: 'absolute',
-    top: '50%',
+    top: '45%',
     width: 70,
     height: 70,
     borderRadius: 35,
@@ -174,10 +254,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 10,
+    borderWidth: 4,
+    borderColor: 'white',
   },
   arrowText: {
     fontSize: 32,
     fontWeight: '900',
     color: '#fff',
   },
+  // Modal Styles
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center' },
+  modalBox: { backgroundColor: 'white', padding: 30, borderRadius: 30, alignItems: 'center', width: '50%' },
+  modalTitle: { fontSize: 24, fontWeight: '900', marginBottom: 25, color: '#333' },
+  modalButtons: { flexDirection: 'row', gap: 20 },
+  modalBtn: { paddingHorizontal: 30, paddingVertical: 15, borderRadius: 20 },
+  modalBtnText: { color: 'white', fontWeight: '900', fontSize: 18 }
 });
