@@ -7,12 +7,12 @@ import {
   SafeAreaView,
   StatusBar,
   Dimensions,
-  Modal,
   BackHandler,
+  Animated,
 } from 'react-native';
 import PagerView from 'react-native-pager-view';
 import Tts from 'react-native-tts';
-import { ChevronLeft, ChevronRight, XCircle, Gamepad2, Zap } from 'lucide-react-native';
+import { ChevronLeft, ChevronRight, XCircle } from 'lucide-react-native';
 import Orientation from 'react-native-orientation-locker';
 
 const { width, height } = Dimensions.get('window');
@@ -35,10 +35,11 @@ const COLOR_DATA = [
 export default function ColorSwipeGame({ navigation }: any) {
   const pagerRef = useRef<PagerView>(null);
   const [currentPage, setCurrentPage] = useState(0);
-  const [isQuitModalVisible, setQuitModalVisible] = useState(false);
+
+  // Bounce animation for tap
+  const scaleAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    // Lock to landscape and init TTS
     Orientation.lockToLandscape();
     Tts.getInitStatus().then(() => {
       Tts.setDefaultRate(0.5);
@@ -46,9 +47,8 @@ export default function ColorSwipeGame({ navigation }: any) {
       Tts.speak(COLOR_DATA[0].name);
     });
 
-    // Handle Android Back Button
     const backAction = () => {
-      setQuitModalVisible(true);
+      handleQuit();
       return true;
     };
     const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
@@ -60,17 +60,22 @@ export default function ColorSwipeGame({ navigation }: any) {
     };
   }, []);
 
-  const handleColorSpeech = (index: number) => {
+  /* ───────────────────────────────
+     SPEAK + BOUNCE
+  ─────────────────────────────── */
+  const speakAndBounce = (index: number) => {
     Tts.stop();
     Tts.speak(COLOR_DATA[index].name);
+
+    Animated.sequence([
+      Animated.timing(scaleAnim, { toValue: 1.1, duration: 100, useNativeDriver: true }),
+      Animated.spring(scaleAnim, { toValue: 1, friction: 3, useNativeDriver: true }),
+    ]).start();
   };
 
   const handleQuit = () => {
     Tts.stop();
-    Tts.speak("Bye Bye!"); // TTS says goodbye
-    setQuitModalVisible(false);
-    
-    // Short delay so the child can hear "Bye Bye" before the screen disappears
+    Tts.speak('Bye Bye!');
     setTimeout(() => {
       navigation.goBack();
     }, 1000);
@@ -80,7 +85,7 @@ export default function ColorSwipeGame({ navigation }: any) {
     const index = e.nativeEvent.position;
     if (index !== currentPage) {
       setCurrentPage(index);
-      handleColorSpeech(index);
+      speakAndBounce(index);
     }
   };
 
@@ -89,14 +94,14 @@ export default function ColorSwipeGame({ navigation }: any) {
     if (nextIndex >= 0 && nextIndex < COLOR_DATA.length) {
       setCurrentPage(nextIndex);
       pagerRef.current?.setPage(nextIndex);
-      handleColorSpeech(nextIndex);
+      speakAndBounce(nextIndex);
     }
   };
 
   return (
     <View style={styles.container}>
       <StatusBar hidden />
-      
+
       {/* Notebook Grid Background */}
       <View style={styles.gridContainer}>
         {[...Array(20)].map((_, i) => (
@@ -109,78 +114,63 @@ export default function ColorSwipeGame({ navigation }: any) {
 
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.topBar}>
-         
-          
           {/* EXIT BUTTON */}
-          <TouchableOpacity activeOpacity={0.7} onPress={() => setQuitModalVisible(true)}>
+          <TouchableOpacity activeOpacity={0.7} onPress={handleQuit}>
             <XCircle color="#FF4D00" size={50} fill="white" />
           </TouchableOpacity>
         </View>
 
         <View style={styles.gameEngine}>
-          <TouchableOpacity 
+          {/* LEFT ARROW */}
+          <TouchableOpacity
             onPress={() => movePage('prev')}
             disabled={currentPage === 0}
             style={[styles.navArrow, { opacity: currentPage === 0 ? 0 : 1 }]}
           >
             <View style={styles.arrowBase}>
-               <ChevronLeft color="#8D6E63" size={45} strokeWidth={4} />
+              <ChevronLeft color="#8D6E63" size={45} strokeWidth={4} />
             </View>
           </TouchableOpacity>
 
-          <PagerView 
+          {/* COLOR PAGER */}
+          <PagerView
             ref={pagerRef}
-            style={styles.pager} 
+            style={styles.pager}
             initialPage={0}
             onPageSelected={onPageSelected}
           >
-            {COLOR_DATA.map((item) => (
+            {COLOR_DATA.map((item, idx) => (
               <View key={item.id} style={styles.cardWrapper}>
                 <View style={styles.cardDepthShadow} />
-                <View style={styles.mainFlashcard}>
-                  <View style={[styles.colorBlock, { backgroundColor: item.hex }]} />
-                  <View style={styles.labelBlock}>
-                    <Text style={styles.colorLabelText}>{item.name}</Text>
-                  </View>
-                </View>
+
+                {/* TAP TO SPEAK */}
+                <TouchableOpacity
+                  activeOpacity={0.9}
+                  onPress={() => speakAndBounce(idx)}
+                  style={styles.mainFlashcard}
+                >
+                  <Animated.View style={{ transform: [{ scale: scaleAnim }], flex: 1 }}>
+                    <View style={[styles.colorBlock, { backgroundColor: item.hex }]} />
+                    <View style={styles.labelBlock}>
+                      <Text style={styles.colorLabelText}>{item.name}</Text>
+                    </View>
+                  </Animated.View>
+                </TouchableOpacity>
               </View>
             ))}
           </PagerView>
 
-          <TouchableOpacity 
-             onPress={() => movePage('next')}
-             disabled={currentPage === COLOR_DATA.length - 1}
-             style={[styles.navArrow, { opacity: currentPage === COLOR_DATA.length - 1 ? 0 : 1 }]}
+          {/* RIGHT ARROW */}
+          <TouchableOpacity
+            onPress={() => movePage('next')}
+            disabled={currentPage === COLOR_DATA.length - 1}
+            style={[styles.navArrow, { opacity: currentPage === COLOR_DATA.length - 1 ? 0 : 1 }]}
           >
             <View style={styles.arrowBase}>
               <ChevronRight color="#8D6E63" size={45} strokeWidth={4} />
             </View>
           </TouchableOpacity>
         </View>
-
-        {/* QUIT MODAL */}
-        <Modal transparent visible={isQuitModalVisible} animationType="fade" onRequestClose={() => setQuitModalVisible(false)}>
-          <View style={styles.modalBackdrop}>
-            <View style={styles.modalBox}>
-              <Text style={styles.modalTitle}>Want to go back? 👋</Text>
-              <View style={styles.modalButtons}>
-                <TouchableOpacity 
-                  style={[styles.modalBtn, { backgroundColor: '#4CAF50' }]} 
-                  onPress={() => setQuitModalVisible(false)}
-                >
-                  <Text style={styles.modalBtnText}>KEEP PLAYING</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                  style={[styles.modalBtn, { backgroundColor: '#F44336' }]} 
-                  onPress={handleQuit}
-                >
-                  <Text style={styles.modalBtnText}>BYE BYE!</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </Modal>
       </SafeAreaView>
     </View>
   );
@@ -198,15 +188,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 25,
     paddingTop: 15,
     alignItems: 'center',
-  },
-  headerLeft: { flexDirection: 'row' },
-  iconBtn: {
-    width: 55,
-    height: 55,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 5,
   },
   gameEngine: {
     flex: 1,
@@ -247,11 +228,4 @@ const styles = StyleSheet.create({
     borderRightWidth: 3,
     borderRightColor: '#D7BCA3',
   },
-  // Modal Styles
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
-  modalBox: { backgroundColor: 'white', padding: 30, borderRadius: 35, alignItems: 'center', width: '50%', borderWidth: 6, borderColor: '#FFB800' },
-  modalTitle: { fontSize: 26, fontWeight: '900', marginBottom: 25, color: '#333' },
-  modalButtons: { flexDirection: 'row', gap: 20 },
-  modalBtn: { paddingHorizontal: 30, paddingVertical: 15, borderRadius: 20, elevation: 4 },
-  modalBtnText: { color: 'white', fontWeight: '900', fontSize: 18 }
 });

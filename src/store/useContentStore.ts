@@ -1,3 +1,4 @@
+// src/store/useContentStore.ts
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -82,6 +83,7 @@ interface ContentState {
   completedCount: number;
   correctCount: number;
   wrongCount: number;
+  highScore: number; // ✅ Track high score
 
   scrollOffsets: Record<string, number>;
   fetchCount: Record<string, number>;
@@ -91,6 +93,9 @@ interface ContentState {
   refresh: (type: ContentItem['type']) => Promise<void>;
   trackAnswer: (isCorrect: boolean) => void;
   setScrollOffset: (type: ContentItem['type'], offset: number) => void;
+  resetScores: () => void;
+  clearItems: () => void;
+  updateHighScore: (score: number) => void; // ✅ Action to update highScore
 }
 
 // ---------------- Store ----------------
@@ -107,11 +112,11 @@ export const useContentStore = create<ContentState>()(
       completedCount: 0,
       correctCount: 0,
       wrongCount: 0,
+      highScore: 0, // initial high score
 
       scrollOffsets: {},
       fetchCount: {},
 
-      // ---------- Fetch initial ----------
       fetchByType: async (type, reset = false) => {
         if (get().loading) return;
 
@@ -140,7 +145,6 @@ export const useContentStore = create<ContentState>()(
         }
       },
 
-      // ---------- Fetch more on scroll ----------
       fetchMore: async (type) => {
         if (get().loading || !get().hasMore) return;
         set({ loading: true });
@@ -167,14 +171,12 @@ export const useContentStore = create<ContentState>()(
         }
       },
 
-      // ---------- Pull to refresh ----------
       refresh: async (type) => {
         set({ refreshing: true });
         await get().fetchByType(type, true);
         set({ refreshing: false });
       },
 
-      // ---------- Tracking ----------
       trackAnswer: (isCorrect) =>
         set((s) => ({
           completedCount: s.completedCount + 1,
@@ -184,6 +186,12 @@ export const useContentStore = create<ContentState>()(
 
       setScrollOffset: (type, offset) =>
         set((s) => ({ scrollOffsets: { ...s.scrollOffsets, [type]: offset } })),
+
+      // --- New Actions ---
+      resetScores: () => set({ completedCount: 0, correctCount: 0, wrongCount: 0 }),
+      clearItems: () => set({ items: [], page: 1, hasMore: true }),
+      updateHighScore: (score: number) =>
+        set((s) => ({ highScore: Math.max(s.highScore, score) })),
     }),
     {
       name: 'content-store',
@@ -194,6 +202,7 @@ export const useContentStore = create<ContentState>()(
         wrongCount: s.wrongCount,
         scrollOffsets: s.scrollOffsets,
         fetchCount: s.fetchCount,
+        highScore: s.highScore, // ✅ persist highScore
       }),
     }
   )

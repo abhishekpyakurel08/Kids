@@ -1,5 +1,5 @@
 {
-  "name": "Kids",
+  "name": "kindiq",
   "version": "0.0.1",
   "private": true,
   "scripts": {
@@ -23,6 +23,7 @@
     "axios": "^1.13.2",
     "lodash": "^4.17.21",
     "lucide-react-native": "^0.562.0",
+    "moti": "^0.30.0",
     "react": "19.2.0",
     "react-native": "0.83.1",
     "react-native-confetti-cannon": "^1.5.2",

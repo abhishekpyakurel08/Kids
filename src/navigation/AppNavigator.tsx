@@ -24,6 +24,7 @@ import BirdsScreen from '../Screen/BirdsScreen';
 import MathMenuScreen from '../Screen/MathMenuScreen';
 import MathScreen from '../Screen/MathScreen';
 import NumberCountScreen from '../Screen/NumberCount';
+// import AnimalSoundScreen from '../Screen/AnimalScreen';
 
 // ---------------- Root Stack Param List ----------------
 export type RootStackParamList = {

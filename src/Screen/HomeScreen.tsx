@@ -11,6 +11,7 @@ import {
   NativeSyntheticEvent,
   NativeScrollEvent,
   Easing,
+  BackHandler,
 } from 'react-native';
 import Orientation from 'react-native-orientation-locker';
 import Tts from 'react-native-tts';
@@ -33,7 +34,7 @@ export interface CardItem {
 const CARDS: CardItem[] = [
   { key: 'Alphabet', color: '#9D4EDD', image: require('../assets/images/abc.jpeg'), label: 'Alphabets', screen: 'AlphabetMenu' },
   { key: 'Numbers', color: '#FF4757', image: require('../assets/images/123.jpeg'), label: 'Numbers', screen: 'MathMenu' },
-  { key: 'Animals', color: '#FFB347', image: require('../assets/images/animals.jpeg'), label: 'Animals', screen: 'Animal' },
+  { key: 'Animal', color: '#FFB347', image: require('../assets/images/animals.jpeg'), label: 'Animal', screen: 'Animal' },
   { key: 'Fruits', color: '#77DD77', image: require('../assets/images/fruits.png'), label: 'Fruits', screen: 'Fruits' },
   { key: 'Colors', color: '#4facfe', image: require('../assets/images/color.jpeg'), label: 'Colors', screen: 'Colors' },
   { key: 'Shapes', color: '#FF6F91', image: require('../assets/images/shapes.png'), label: 'Shapes', screen: 'Shapes' },
@@ -58,7 +59,8 @@ export default function HomeScreen() {
   const scrollX = useRef(new RNAnimated.Value(0)).current;
   const shineAnim = useRef(new RNAnimated.Value(0)).current;
   const wiggleAnim = useRef(new RNAnimated.Value(0)).current;
-  const logoutBounce = useRef(new RNAnimated.Value(1)).current; // For bounce animation
+  const logoutBounce = useRef(new RNAnimated.Value(1)).current;
+  const fadeAnim = useRef(new RNAnimated.Value(1)).current; // For fade-out effect
 
   // Lock landscape and set TTS rate
   useFocusEffect(
@@ -175,24 +177,24 @@ export default function HomeScreen() {
     );
   });
 
-  // Function to handle LogOut tap with bounce
+  // Logout with bounce + fade-out + TTS
   const handleLogout = () => {
     RNAnimated.sequence([
       RNAnimated.timing(logoutBounce, { toValue: 1.2, duration: 100, useNativeDriver: true }),
       RNAnimated.timing(logoutBounce, { toValue: 1, duration: 100, useNativeDriver: true }),
+      RNAnimated.timing(fadeAnim, { toValue: 0, duration: 800, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
     ]).start(() => {
       Tts.stop();
       Tts.speak('Bye Bye', undefined, {
         onFinish: () => {
-          navigation.goBack();
-          // Or use BackHandler.exitApp() to fully close app
+          BackHandler.exitApp(); // Fully exit
         },
       });
     });
   };
 
   return (
-    <View style={styles.container}>
+    <RNAnimated.View style={[styles.container, { opacity: fadeAnim }]}>
       <StatusBar hidden />
 
       {/* Parallax Video Background */}
@@ -211,21 +213,32 @@ export default function HomeScreen() {
       <SafeAreaView style={styles.safeArea}>
         {/* Header UI */}
         <View style={styles.header}>
-        
-          {/* Mute & Settings */}
-          <View style={{ flexDirection: 'row' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            {/* Mute Button */}
             <TouchableOpacity 
               onPress={() => setIsMuted(!isMuted)}
               style={[styles.navBtn, { backgroundColor: '#FF69B4', marginRight: 15 }]}
             >
               {isMuted ? <VolumeX color="white" size={24} /> : <Volume2 color="white" size={24} />}
             </TouchableOpacity>
+
+            {/* Settings Button */}
             <TouchableOpacity 
               onPress={() => navigation.navigate('Settings')}
-              style={[styles.navBtn, { backgroundColor: '#00BFFF' }]}
+              style={[styles.navBtn, { backgroundColor: '#00BFFF', marginRight: 15 }]}
             >
               <Settings color="white" size={24} />
             </TouchableOpacity>
+
+            {/* Logout Button */}
+            <RNAnimated.View style={{ transform: [{ scale: logoutBounce }] }}>
+              <TouchableOpacity
+                onPress={handleLogout}
+                style={[styles.navBtn, { backgroundColor: '#FF4500' }]}
+              >
+                <LogOut color="white" size={24} />
+              </TouchableOpacity>
+            </RNAnimated.View>
           </View>
         </View>
 
@@ -246,7 +259,7 @@ export default function HomeScreen() {
           renderItem={({ item, index }) => <Card item={item} index={index} />}
         />
       </SafeAreaView>
-    </View>
+    </RNAnimated.View>
   );
 }
 
@@ -257,7 +270,7 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   header: { 
     flexDirection: 'row', 
-    justifyContent: 'space-between', 
+    justifyContent: 'flex-start', 
     paddingHorizontal: 30, 
     paddingTop: 20, 
     zIndex: 10 

@@ -1,186 +1,355 @@
-// src/Screen/MathScreen.tsx
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
+  TouchableOpacity,
   StyleSheet,
   Dimensions,
   ActivityIndicator,
-  Animated,
-  TouchableOpacity,
   StatusBar,
-  PanResponder,
+  SafeAreaView,
+  Platform,
 } from 'react-native';
-import Tts from 'react-native-tts';
+import { CheckCircle2, XCircle, RefreshCcw, Trophy, X } from 'lucide-react-native';
+import { MotiView, AnimatePresence } from 'moti';
 import ConfettiCannon from 'react-native-confetti-cannon';
+import Tts from 'react-native-tts';
 import { useContentStore, ContentItem } from '../store/useContentStore';
-import { RouteProp } from '@react-navigation/native';
-import { RootStackParamList } from '../navigation/AppNavigator';
 
 const { width, height } = Dimensions.get('window');
+const TOTAL_STEPS = 10;
 
-type MathScreenRouteProp = RouteProp<RootStackParamList, 'Math'>;
+type MathScreenProps = {
+  route: { params: { type: 'addition' | 'subtraction' | 'multiplication' | 'division' } };
+  navigation: any;
+};
 
-interface Props {
-  route: MathScreenRouteProp;
-}
+export default function MathScreen({ route, navigation }: MathScreenProps) {
+  const { type } = route.params;
+  const {
+    items,
+    loading,
+    fetchByType,
+    trackAnswer,
+    highScore,
+    resetScores,
+    updateHighScore,
+  } = useContentStore();
 
-const MathScreen: React.FC<Props> = ({ route }) => {
-  const { type = 'addition' } = route.params || {};
-  const { items, loading, fetchByType, trackAnswer, fetchMore } = useContentStore();
-
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [answered, setAnswered] = useState(false);
+  const [sessionQuestions, setSessionQuestions] = useState<ContentItem[]>([]);
+  const [currentIndex, setCurrentIndex] = useState<number>(0);
+  const [selectedAnswer, setSelectedAnswer] = useState<string | number | null>(null);
+  const [isFinished, setIsFinished] = useState<boolean>(false);
   const [showConfetti, setShowConfetti] = useState(false);
+  const [quizScore, setQuizScore] = useState<number>(0);
+  const [exitPressed, setExitPressed] = useState(false);
 
-  const scaleAnim = useRef(new Animated.Value(1)).current;
-
-  //  Handle orientation changes
-  const [dimensions, setDimensions] = useState({ width, height });
   useEffect(() => {
-    const subscription = Dimensions.addEventListener('change', ({ window }) => {
-      setDimensions({ width: window.width, height: window.height });
-    });
-    return () => subscription.remove();
-  }, []);
-
-  //  Initialize TTS and fetch content
-  useEffect(() => {
-    Tts.setDefaultRate(0.5);
     fetchByType(type, true);
+    Tts.setDefaultRate(0.45);
+    Tts.setDefaultPitch(1.2);
   }, [type]);
 
-  const goNext = () => {
-    if (currentIndex < items.length - 1) {
-      setCurrentIndex(i => i + 1);
-      if (currentIndex >= items.length - 3) fetchMore(type);
+  useEffect(() => {
+    if (items.length > 0) {
+      const selected =
+        items.length > TOTAL_STEPS ? shuffleArray(items).slice(0, TOTAL_STEPS) : items;
+      setSessionQuestions(selected);
+      setCurrentIndex(0);
+      setSelectedAnswer(null);
+      setIsFinished(false);
+      setShowConfetti(false);
+      setQuizScore(0);
+      speakQuestion(selected[0]);
+    }
+  }, [items]);
+
+  const currentQuestion = sessionQuestions[currentIndex];
+
+  const speakQuestion = (question: ContentItem | undefined) => {
+    if (!question) return;
+    try {
+      Tts.stop();
+      Tts.speak(question.question);
+    } catch (err) {
+      console.log('TTS error:', err);
     }
   };
 
-  const goPrev = () => {
-    if (currentIndex > 0) setCurrentIndex(i => i - 1);
+  const speakAnswer = (answer: string | number) => {
+    try {
+      Tts.stop();
+      Tts.speak(String(answer));
+    } catch (err) {
+      console.log('TTS error:', err);
+    }
   };
 
-  // 🖐 Swipe gestures
-  const panResponder = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dx) > 20,
-      onPanResponderRelease: (_, gesture) => {
-        if (gesture.dx < -50) goNext();
-        if (gesture.dx > 50) goPrev();
-      },
-    })
-  ).current;
+  const handleAnswer = (val: string | number) => {
+    if (selectedAnswer || !currentQuestion) return;
 
-  const handleAnswer = (userChoice: string, correctAnswer: string) => {
-    if (answered) return;
-
-    const isCorrect = userChoice === correctAnswer;
-    setAnswered(true);
-
-    if (isCorrect) {
-      setShowConfetti(true);
-      Tts.speak('Great job!');
-      Animated.sequence([
-        Animated.timing(scaleAnim, { toValue: 1.2, duration: 200, useNativeDriver: true }),
-        Animated.timing(scaleAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
-      ]).start();
-    } else {
-      Tts.speak('Try again!');
-    }
-
+    const isCorrect = String(val) === String(currentQuestion.correctAnswer);
+    setSelectedAnswer(val);
     trackAnswer(isCorrect);
+    setQuizScore(prev => prev + (isCorrect ? 1 : 0));
+    speakAnswer(val);
 
     setTimeout(() => {
-      setAnswered(false);
-      setShowConfetti(false);
-      goNext();
-    }, 1500);
+      if (currentIndex < sessionQuestions.length - 1) {
+        const nextIndex = currentIndex + 1;
+        setCurrentIndex(nextIndex);
+        setSelectedAnswer(null);
+        speakQuestion(sessionQuestions[nextIndex]);
+      } else {
+        const finalScore = quizScore + (isCorrect ? 1 : 0);
+        updateHighScore(finalScore);
+        if ((finalScore / sessionQuestions.length) * 100 >= 80) setShowConfetti(true);
+        setIsFinished(true);
+      }
+    }, 1200);
   };
 
-  const currentItem: ContentItem | undefined = items[currentIndex];
+  const restart = () => {
+    resetScores();
+    fetchByType(type, true);
+  };
 
   if (loading && items.length === 0) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#FFF" />
+        <ActivityIndicator size="large" color="#3498DB" />
       </View>
     );
   }
 
+  const progress = ((currentIndex + 1) / sessionQuestions.length) * 100;
+  const percentage = Math.round((quizScore / sessionQuestions.length) * 100);
+
+  const getCompletionMessage = () => {
+    if (percentage === 100) return 'Perfect Score! 🎉';
+    if (percentage >= 80) return 'Excellent Work! 🌟';
+    if (percentage >= 60) return 'Good Job! 👍';
+    if (percentage >= 40) return 'Keep Practicing! 💪';
+    return "Don't Give Up! 🚀";
+  };
+
+  const isSmallScreen = width < 375;
+  const isMediumScreen = width >= 375 && width < 414;
+  const questionFontSize = isSmallScreen ? 32 : isMediumScreen ? 36 : 40;
+  const optionSize = isSmallScreen ? 80 : isMediumScreen ? 90 : 95;
+  const optionFontSize = isSmallScreen ? 22 : isMediumScreen ? 26 : 28;
+
   return (
-    <View style={styles.container}>
-      <StatusBar hidden />
-      <View style={styles.gameContent}>
-        {currentItem && (
-          <Animated.View
-            {...panResponder.panHandlers}
-            style={[
-              styles.mathCard,
-              { transform: [{ scale: scaleAnim }], width: dimensions.width * 0.85, borderRadius: 30 },
-            ]}
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.container}>
+        <StatusBar barStyle="dark-content" />
+
+        {isFinished && showConfetti && (
+          <ConfettiCannon count={150} origin={{ x: width / 2, y: 0 }} fadeOut autoStart />
+        )}
+
+        {/* ───────────── EXIT BUTTON (LEFT) ───────────── */}
+        <MotiView
+          animate={{ scale: exitPressed ? 0.9 : 1 }}
+          transition={{ type: 'spring', damping: 12 }}
+          style={styles.exitBtnContainer}
+        >
+          <TouchableOpacity
+            style={styles.exitBtn}
+            onPress={() => {
+              Tts.stop();
+              Tts.speak('Bye Bye');
+              setTimeout(() => navigation.goBack(), 600);
+            }}
+            onPressIn={() => setExitPressed(true)}
+            onPressOut={() => setExitPressed(false)}
           >
-            <Text style={styles.parentsOnlyText}>FOR PARENTS ONLY</Text>
-            <Text style={styles.questionText}>{currentItem.question}</Text>
-            <View style={styles.optionsRow}>
-              {currentItem.options?.map((opt, index) => (
-                <TouchableOpacity
-                  key={index}
-                  style={styles.optionButton}
-                  onPress={() => handleAnswer(opt, currentItem.correctAnswer!)}
-                  disabled={answered}
+            <X size={32} color="#FFF" strokeWidth={5} />
+          </TouchableOpacity>
+        </MotiView>
+
+        {/* ───────────── PROGRESS ───────────── */}
+        <View style={styles.progressContainer}>
+          <View style={styles.progressTrack}>
+            <MotiView
+              animate={{ width: `${progress}%` }}
+              transition={{ type: 'timing', duration: 400 }}
+              style={styles.progressFill}
+            />
+          </View>
+          <Text style={styles.stepText}>
+            Step {currentIndex + 1} of {sessionQuestions.length}
+          </Text>
+          {/* "Correct Answers" text has been removed from here */}
+        </View>
+
+        {/* ───────────── QUESTION ───────────── */}
+        <View style={styles.questionArea}>
+          <Text style={[styles.questionLabel, { fontSize: questionFontSize }]}>
+            {currentQuestion?.question}
+          </Text>
+        </View>
+
+        {/* ───────────── OPTIONS GRID ───────────── */}
+        <View style={styles.grid}>
+          {currentQuestion?.options?.map((option, idx) => {
+            const isCorrect = String(option) === String(currentQuestion.correctAnswer);
+            const isSelected = selectedAnswer === option;
+
+            return (
+              <TouchableOpacity
+                key={idx}
+                onPress={() => handleAnswer(option)}
+                disabled={selectedAnswer !== null}
+                activeOpacity={0.7}
+              >
+                <MotiView
+                  from={{ scale: 1 }}
+                  animate={{
+                    scale: isSelected ? 1.05 : 1,
+                    translateY: isSelected ? -5 : 0,
+                    backgroundColor: isSelected
+                      ? isCorrect
+                        ? '#4CAF50'
+                        : '#F44336'
+                      : '#FFFFFF',
+                  }}
+                  transition={{ type: 'spring', damping: 12 }}
+                  style={[styles.option, { width: optionSize, height: optionSize * 0.84 }]}
                 >
-                  <Text style={styles.optionButtonText}>{opt}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            <View style={styles.arrowRow}>
-              <TouchableOpacity onPress={goPrev} disabled={currentIndex === 0} style={styles.arrowButton}>
-                <Text style={styles.arrowText}>◀</Text>
+                  <Text
+                    style={[
+                      styles.optionText,
+                      isSelected && { color: 'white' },
+                      { fontSize: optionFontSize },
+                    ]}
+                  >
+                    {option}
+                  </Text>
+
+                  <AnimatePresence>
+                    {isSelected && (
+                      <MotiView
+                        from={{ opacity: 0, scale: 0 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        style={styles.check}
+                      >
+                        {isCorrect ? (
+                          <CheckCircle2 color="white" size={22} />
+                        ) : (
+                          <XCircle color="white" size={22} />
+                        )}
+                      </MotiView>
+                    )}
+                  </AnimatePresence>
+                </MotiView>
               </TouchableOpacity>
-              <TouchableOpacity onPress={goNext} disabled={currentIndex === items.length - 1} style={styles.arrowButton}>
-                <Text style={styles.arrowText}>▶</Text>
+            );
+          })}
+        </View>
+
+        {/* ───────────── RESTART BUTTON ───────────── */}
+        <TouchableOpacity onPress={restart} style={styles.cancel}>
+          <Text style={styles.cancelText}>RESTART</Text>
+        </TouchableOpacity>
+
+        {/* ───────────── QUIZ FINISHED OVERLAY ───────────── */}
+        {isFinished && (
+          <MotiView from={{ opacity: 0 }} animate={{ opacity: 1 }} style={styles.overlay}>
+            <MotiView
+              from={{ opacity: 0, scale: 0.7, translateY: 50 }}
+              animate={{ opacity: 1, scale: 1, translateY: 0 }}
+              style={styles.card}
+            >
+              <Trophy color="#FFD700" size={isSmallScreen ? 38 : 45} />
+              <Text style={[styles.title, { fontSize: isSmallScreen ? 19 : 22 }]}>
+                {getCompletionMessage()}
+              </Text>
+              <View style={styles.scoreRow}>
+                <Text style={styles.scoreValue}>Score: {quizScore}/{sessionQuestions.length}</Text>
+                <Text style={[styles.scoreValue, { color: '#FF9800' }]}>Best: {highScore}/{sessionQuestions.length}</Text>
+              </View>
+              <TouchableOpacity onPress={restart} style={styles.mainBtn}>
+                <RefreshCcw color="white" size={18} />
+                <Text style={styles.mainBtnText}>Try Again</Text>
               </TouchableOpacity>
-            </View>
-          </Animated.View>
+            </MotiView>
+          </MotiView>
         )}
       </View>
-
-      {showConfetti && <ConfettiCannon count={150} origin={{ x: dimensions.width / 2, y: 0 }} />}
-    </View>
+    </SafeAreaView>
   );
-};
+}
 
-export default MathScreen;
+function shuffleArray<T>(array: T[]): T[] {
+  return array
+    .map(value => ({ value, sort: Math.random() }))
+    .sort((a, b) => a.sort - b.sort)
+    .map(({ value }) => value);
+}
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#81D4FA' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#81D4FA' },
-  gameContent: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  mathCard: {
-    backgroundColor: '#FFF',
-    padding: 30,
-    alignItems: 'center',
-    borderWidth: 8,
-    borderColor: '#FFD54F',
-    elevation: 10,
+  safeArea: { flex: 1, backgroundColor: '#F0F9FF' },
+  container: { flex: 1, alignItems: 'center', paddingHorizontal: width * 0.06 },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+
+  exitBtnContainer: {
+    position: 'absolute',
+    top: Platform.OS === 'android' ? 20 : 10,
+    left: 20,
+    zIndex: 100,
   },
-  parentsOnlyText: { fontSize: 14, color: '#94A3B8', fontWeight: 'bold', marginBottom: 10 },
-  questionText: { fontSize: 32, fontWeight: '900', color: '#1E293B', marginBottom: 30, textAlign: 'center' },
-  optionsRow: { flexDirection: 'row', justifyContent: 'center', gap: 15, marginBottom: 20, flexWrap: 'wrap' },
-  optionButton: {
-    backgroundColor: '#90CAF9',
-    minWidth: 80,
-    height: 60,
-    borderRadius: 15,
+  exitBtn: {
+    width: width < 375 ? 45 : 50,
+    height: width < 375 ? 45 : 50,
+    borderRadius: 100,
+    backgroundColor: '#FF5722',
     justifyContent: 'center',
     alignItems: 'center',
-    margin: 5,
-    borderBottomWidth: 4,
-    borderBottomColor: '#42A5F5',
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
   },
-  optionButtonText: { fontSize: 24, fontWeight: '900', color: '#FFF' },
-  arrowRow: { flexDirection: 'row', justifyContent: 'space-between', width: '60%', marginTop: 10 },
-  arrowButton: { backgroundColor: '#FFB300', width: 60, height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center', elevation: 5 },
-  arrowText: { fontSize: 28, fontWeight: 'bold', color: '#FFF' },
+
+  progressContainer: {
+    width: '100%',
+    marginTop: 80,
+    paddingHorizontal: width * 0.02,
+  },
+  progressTrack: {
+    width: '100%',
+    height: 10,
+    backgroundColor: '#D1E4F3',
+    borderRadius: 5,
+    overflow: 'hidden',
+  },
+  progressFill: { height: '100%', backgroundColor: '#3498DB' },
+  stepText: { textAlign: 'center', marginTop: 6, color: '#5D6D7E', fontWeight: '600' },
+
+  questionArea: { height: height * 0.2, justifyContent: 'center', alignItems: 'center' },
+  questionLabel: { fontWeight: '900', color: '#1A4A73', textAlign: 'center' },
+
+  grid: { flexDirection: 'row', gap: 15, flexWrap: 'wrap', justifyContent: 'center' },
+  option: {
+    backgroundColor: 'white',
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 3,
+  },
+  optionText: { fontWeight: '800', color: '#2C3E50' },
+  check: { position: 'absolute', top: -8, right: -8, backgroundColor: 'rgba(0,0,0,0.1)', borderRadius: 20 },
+
+  cancel: { marginTop: 'auto', marginBottom: 30, paddingVertical: 10 },
+  cancelText: { color: '#E74C3C', fontSize: 17, fontWeight: '800', textDecorationLine: 'underline' },
+
+  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
+  card: { backgroundColor: 'white', width: '85%', padding: 20, borderRadius: 20, alignItems: 'center' },
+  title: { fontWeight: '900', color: '#1A4A73', marginTop: 10 },
+  scoreRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginVertical: 15 },
+  scoreValue: { fontWeight: '900', color: '#27AE60' },
+  mainBtn: { backgroundColor: '#3498DB', flexDirection: 'row', borderRadius: 20, gap: 7, padding: 12, alignItems: 'center' },
+  mainBtnText: { color: 'white', fontWeight: '800' },
 });

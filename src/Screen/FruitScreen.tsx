@@ -7,16 +7,23 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   StatusBar,
-  Modal,
   BackHandler,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { GestureHandlerRootView, PanGestureHandler } from 'react-native-gesture-handler';
-import Animated, { useSharedValue, useAnimatedStyle, withSpring, runOnJS } from 'react-native-reanimated';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+  runOnJS,
+  interpolate,
+  Extrapolate,
+} from 'react-native-reanimated';
 import FastImage from 'react-native-fast-image';
 import Tts from 'react-native-tts';
 import Orientation from 'react-native-orientation-locker';
-import { X } from 'lucide-react-native'; // Ensure lucide-react-native is installed
+import { X } from 'lucide-react-native';
 import { useContentStore } from '../store/useContentStore';
 
 const { width, height } = Dimensions.get('window');
@@ -26,18 +33,18 @@ export default function FruitScreen({ navigation }: any) {
   const { items, loading, fetchByType } = useContentStore();
   const [fruits, setFruits] = useState<any[]>([]);
   const [index, setIndex] = useState(0);
-  const [isQuitModalVisible, setQuitModalVisible] = useState(false);
 
   const translateX = useSharedValue(0);
+  const transition = useSharedValue(0); // for fade + scale
+  const bounce = useSharedValue(1); // for tap bounce
   const EMOJI_SIZE = Math.min(width, height) * 0.25;
 
   useEffect(() => {
     Orientation.lockToLandscape();
     fetchByType('fruit', true);
 
-    // Handle Android Hardware Back Button
     const backAction = () => {
-      setQuitModalVisible(true);
+      handleQuit();
       return true;
     };
     const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
@@ -60,21 +67,19 @@ export default function FruitScreen({ navigation }: any) {
 
   // Speak fruit name on index change
   useEffect(() => {
-    if (currentFruit && !isQuitModalVisible) {
+    if (currentFruit) {
       Tts.stop();
       Tts.speak(currentFruit.title);
+      transition.value = withTiming(1, { duration: 400 }, () => {
+        transition.value = 0;
+      });
     }
-  }, [index, currentFruit, isQuitModalVisible]);
+  }, [index, currentFruit]);
 
   const handleQuit = () => {
     Tts.stop();
-    Tts.speak("Bye Bye!"); // TTS says "Bye Bye"
-    setQuitModalVisible(false);
-    
-    // Small delay to allow TTS to start before screen closes
-    setTimeout(() => {
-      navigation.goBack();
-    }, 1000);
+    Tts.speak("Bye Bye!");
+    setTimeout(() => navigation.goBack(), 1000);
   };
 
   const next = () => setIndex(i => (i + 1) % fruits.length);
@@ -87,16 +92,38 @@ export default function FruitScreen({ navigation }: any) {
   };
 
   const animStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: translateX.value }],
+    transform: [{ translateX: translateX.value }, { scale: bounce.value }],
   }));
 
-  const isEmoji = currentFruit?.imageUrl?.length <= 4; // Improved emoji detection
+  // Animated fade + scale for fruit on index change
+  const transitionStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(transition.value, [0, 1], [0.7, 1], Extrapolate.CLAMP),
+    transform: [
+      {
+        scale: interpolate(transition.value, [0, 1], [0.85, 1], Extrapolate.CLAMP),
+      },
+    ],
+  }));
+
+  const isEmoji = currentFruit?.imageUrl?.length <= 4;
 
   const imageUrl = currentFruit?.imageUrl
     ? currentFruit.imageUrl.startsWith('http')
       ? currentFruit.imageUrl
       : `${BASE_URL}/uploads/${currentFruit.imageUrl}`
     : null;
+
+  // Tap to speak + bounce
+  const onTapFruit = () => {
+    if (!currentFruit) return;
+    Tts.stop();
+    Tts.speak(currentFruit.title);
+
+    // Bounce animation
+    bounce.value = withSpring(1.2, { damping: 5 }, () => {
+      bounce.value = withSpring(1);
+    });
+  };
 
   if (loading || !currentFruit) {
     return (
@@ -111,12 +138,9 @@ export default function FruitScreen({ navigation }: any) {
       <SafeAreaView style={styles.container}>
         <StatusBar hidden />
 
-        {/* TOP HEADER WITH X BUTTON */}
+        {/* EXIT BUTTON */}
         <View style={styles.header}>
-          <TouchableOpacity 
-            style={styles.exitBtn} 
-            onPress={() => setQuitModalVisible(true)}
-          >
+          <TouchableOpacity style={styles.exitBtn} onPress={handleQuit}>
             <X color="white" strokeWidth={4} size={30} />
           </TouchableOpacity>
         </View>
@@ -131,23 +155,25 @@ export default function FruitScreen({ navigation }: any) {
           <Text style={styles.arrowText}>▶</Text>
         </TouchableOpacity>
 
-        {/* SWIPE GESTURE */}
+        {/* SWIPE GESTURE + TAP */}
         <PanGestureHandler
-          onGestureEvent={(e) => (translateX.value = e.nativeEvent.translationX)}
+          onGestureEvent={e => (translateX.value = e.nativeEvent.translationX)}
           onEnded={onSwipeEnd}
         >
-          <Animated.View style={[styles.fruitWrapper, animStyle]}>
-            {isEmoji ? (
-              <Text style={[styles.emoji, { fontSize: EMOJI_SIZE }]}>{currentFruit.imageUrl}</Text>
-            ) : (
-              imageUrl && (
-                <FastImage
-                  source={{ uri: imageUrl, cache: FastImage.cacheControl.web }}
-                  style={styles.image}
-                  resizeMode={FastImage.resizeMode.contain}
-                />
-              )
-            )}
+          <Animated.View style={[styles.fruitWrapper, animStyle, transitionStyle]}>
+            <TouchableOpacity activeOpacity={0.9} onPress={onTapFruit}>
+              {isEmoji ? (
+                <Text style={[styles.emoji, { fontSize: EMOJI_SIZE }]}>{currentFruit.imageUrl}</Text>
+              ) : (
+                imageUrl && (
+                  <FastImage
+                    source={{ uri: imageUrl, cache: FastImage.cacheControl.web }}
+                    style={styles.image}
+                    resizeMode={FastImage.resizeMode.contain}
+                  />
+                )
+              )}
+            </TouchableOpacity>
           </Animated.View>
         </PanGestureHandler>
 
@@ -155,31 +181,6 @@ export default function FruitScreen({ navigation }: any) {
         <View style={styles.label}>
           <Text style={styles.labelText}>{currentFruit.title.toUpperCase()}</Text>
         </View>
-
-        {/* QUIT MODAL */}
-        <Modal transparent visible={isQuitModalVisible} animationType="fade">
-          <View style={styles.modalBackdrop}>
-            <View style={styles.modalBox}>
-              <Text style={styles.modalTitle}>Want to go back? 👋</Text>
-              <View style={styles.modalButtons}>
-                <TouchableOpacity 
-                  style={[styles.modalBtn, { backgroundColor: '#4CAF50' }]} 
-                  onPress={() => setQuitModalVisible(false)}
-                >
-                  <Text style={styles.modalBtnText}>PLAY</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                  style={[styles.modalBtn, { backgroundColor: '#F44336' }]} 
-                  onPress={handleQuit}
-                >
-                  <Text style={styles.modalBtnText}>BYE BYE</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </Modal>
-
       </SafeAreaView>
     </GestureHandlerRootView>
   );
@@ -207,7 +208,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 4,
     borderColor: 'white',
-    elevation: 5,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 3 },
   },
   center: {
     flex: 1,
@@ -224,6 +229,7 @@ const styles = StyleSheet.create({
   image: {
     width: '100%',
     height: '100%',
+    borderRadius: 20,
   },
   emoji: {
     textAlign: 'center',
@@ -237,6 +243,11 @@ const styles = StyleSheet.create({
     borderRadius: 40,
     borderWidth: 4,
     borderColor: '#B3002A',
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowOffset: { width: 0, height: 3 },
+    shadowRadius: 4,
   },
   labelText: {
     color: '#fff',
@@ -256,17 +267,15 @@ const styles = StyleSheet.create({
     zIndex: 10,
     borderWidth: 4,
     borderColor: 'white',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowOffset: { width: 0, height: 3 },
+    shadowRadius: 4,
   },
   arrowText: {
     fontSize: 32,
     fontWeight: '900',
     color: '#fff',
   },
-  // Modal Styles
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center' },
-  modalBox: { backgroundColor: 'white', padding: 30, borderRadius: 30, alignItems: 'center', width: '50%' },
-  modalTitle: { fontSize: 24, fontWeight: '900', marginBottom: 25, color: '#333' },
-  modalButtons: { flexDirection: 'row', gap: 20 },
-  modalBtn: { paddingHorizontal: 30, paddingVertical: 15, borderRadius: 20 },
-  modalBtnText: { color: 'white', fontWeight: '900', fontSize: 18 }
 });

@@ -1,98 +1,112 @@
 import React, { useEffect, useState, useRef } from 'react';
 import {
-  View, Text, Image, ImageBackground, StyleSheet,
-  ActivityIndicator, Animated, Modal, TouchableOpacity, SafeAreaView, StatusBar, Pressable, BackHandler
+  View,
+  Text,
+  Image,
+  ImageBackground,
+  StyleSheet,
+  ActivityIndicator,
+  Animated,
+  TouchableOpacity,
+  SafeAreaView,
+  StatusBar,
+  Pressable,
+  BackHandler,
 } from 'react-native';
-import { ArrowLeft, ArrowRight, X, Zap, Gamepad2 } from 'lucide-react-native';
+
+import { ArrowLeft, ArrowRight, X } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import Sound from 'react-native-sound';
 import Orientation from 'react-native-orientation-locker';
+import Tts from 'react-native-tts';
+
 import { useContentStore } from '../store/useContentStore';
 
 const BASE_URL = 'https://kiddsapp-backend.tecobit.cloud';
 
-const isEmoji = (str: string) => 
+const isEmoji = (str: string) =>
   str && str.length <= 4 && !str.includes('/') && !str.startsWith('http');
 
-const AnimalSoundScreen = () => {
+const AnimalScreen = () => {
   const navigation = useNavigation();
   const { items, loading, fetchByType } = useContentStore();
+
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [isQuitModalVisible, setQuitModalVisible] = useState(false);
-  
+
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const leftBtnPush = useRef(new Animated.Value(0)).current;
   const rightBtnPush = useRef(new Animated.Value(0)).current;
-  const soundCache = useRef<Record<string, Sound>>({});
-  const exitSound = useRef<Sound | null>(null);
+  const fadeAnim = useRef(new Animated.Value(1)).current;
 
+  const soundCache = useRef<Record<string, Sound>>({});
+
+  /* ───────────────────────────────
+     INITIAL SETUP
+  ─────────────────────────────── */
   useEffect(() => {
     Orientation.lockToLandscape();
     StatusBar.setHidden(true);
     fetchByType('animal', true);
-    Sound.setCategory('Playback');
 
-    // Load the "Bye Bye" or "Click" sound for exiting
-    // Note: Ensure 'bye_bye.mp3' exists in your android/app/src/main/res/raw or ios bundle
-    exitSound.current = new Sound('bye_bye.mp3', Sound.MAIN_BUNDLE, (error) => {
-      if (error) console.log('Exit sound not found, skipping.');
-    });
+    Sound.setCategory('Playback', true);
+
+    Tts.setDefaultLanguage('en-US');
+    Tts.setDefaultRate(0.45);
+    Tts.setDefaultPitch(1.3);
 
     const backAction = () => {
-      setQuitModalVisible(true);
-      return true;
+      handleQuit();
+      return true; // prevent default
     };
-    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+
+    const backHandler = BackHandler.addEventListener(
+      'hardwareBackPress',
+      backAction
+    );
 
     return () => {
       backHandler.remove();
       Orientation.unlockAllOrientations();
       StatusBar.setHidden(false);
+
       Object.values(soundCache.current).forEach(s => s.release());
-      if (exitSound.current) exitSound.current.release();
+      Tts.stop();
     };
   }, []);
 
+  /* ───────────────────────────────
+     PRELOAD ANIMAL SOUNDS
+  ─────────────────────────────── */
   useEffect(() => {
     items.forEach(item => {
       if (item.soundUrl && !soundCache.current[item._id]) {
-        const uri = item.soundUrl.startsWith('http') 
-          ? item.soundUrl 
+        const uri = item.soundUrl.startsWith('http')
+          ? item.soundUrl
           : `${BASE_URL}/${item.soundUrl}`;
-        
-        const sound = new Sound(uri, '', (error) => {
-          if (error) console.warn('Failed to load sound', uri, error);
+
+        soundCache.current[item._id] = new Sound(uri, '', error => {
+          if (error) console.warn('Sound load failed:', uri);
         });
-        soundCache.current[item._id] = sound;
       }
     });
   }, [items]);
 
+  /* ───────────────────────────────
+     SOUND HELPERS
+  ─────────────────────────────── */
+  const stopAllSounds = () => {
+    Object.values(soundCache.current).forEach(sound => sound.stop());
+  };
+
   const playSound = (id: string) => {
+    stopAllSounds();
     const sound = soundCache.current[id];
-    if (sound) {
-      sound.stop(() => {
-        sound.play();
-      });
-    }
+    if (sound) sound.play();
   };
 
-  const handleQuit = () => {
-    // 1. Stop animal sounds
-    Object.values(soundCache.current).forEach(s => s.stop());
-
-    // 2. Play the Bye Bye sound
-    if (exitSound.current) {
-      exitSound.current.play();
-    }
-
-    // 3. Short delay so sound can start before screen closes
-    setTimeout(() => {
-      setQuitModalVisible(false);
-      navigation.goBack();
-    }, 800); 
-  };
-
+  /* ───────────────────────────────
+     UI ANIMATIONS
+  ─────────────────────────────── */
   const bounceAnimal = () => {
     Animated.sequence([
       Animated.spring(scaleAnim, { toValue: 1.2, useNativeDriver: true }),
@@ -100,16 +114,48 @@ const AnimalSoundScreen = () => {
     ]).start();
   };
 
-  const animateButton = (animVar: Animated.Value, action: () => void) => {
+  const animateButton = (anim: Animated.Value, action: () => void) => {
     Animated.sequence([
-      Animated.timing(animVar, { toValue: 4, duration: 100, useNativeDriver: true }),
-      Animated.timing(animVar, { toValue: 0, duration: 100, useNativeDriver: true }),
-    ]).start(() => action());
+      Animated.timing(anim, { toValue: 4, duration: 100, useNativeDriver: true }),
+      Animated.timing(anim, { toValue: 0, duration: 100, useNativeDriver: true }),
+    ]).start(action);
   };
 
-  const nextItem = () => currentIndex < items.length - 1 && setCurrentIndex(currentIndex + 1);
-  const prevItem = () => currentIndex > 0 && setCurrentIndex(currentIndex - 1);
+  /* ───────────────────────────────
+     NAVIGATION
+  ─────────────────────────────── */
+  const nextItem = () => {
+    stopAllSounds();
+    if (currentIndex < items.length - 1) setCurrentIndex(i => i + 1);
+  };
 
+  const prevItem = () => {
+    stopAllSounds();
+    if (currentIndex > 0) setCurrentIndex(i => i - 1);
+  };
+
+  const handleQuit = () => {
+    stopAllSounds();
+    Tts.stop();
+
+    // Fade out screen
+    Animated.timing(fadeAnim, { toValue: 0, duration: 800, useNativeDriver: true }).start();
+
+    // Speak "Bye bye" and exit app safely
+    Tts.speak('Bye bye!', undefined, {
+      onFinish: () => {
+        if (navigation.canGoBack()) {
+          navigation.goBack();
+        } else {
+          BackHandler.exitApp(); // fallback if first screen
+        }
+      },
+    });
+  };
+
+  /* ───────────────────────────────
+     LOADING
+  ─────────────────────────────── */
   if (loading || items.length === 0) {
     return (
       <View style={styles.center}>
@@ -120,47 +166,62 @@ const AnimalSoundScreen = () => {
 
   const currentItem = items[currentIndex];
 
-  const NavButton = ({ direction, disabled }: { direction: 'left' | 'right', disabled: boolean }) => {
+  /* ───────────────────────────────
+     NAV BUTTON
+  ─────────────────────────────── */
+  const NavButton = ({
+    direction,
+    disabled,
+  }: {
+    direction: 'left' | 'right';
+    disabled: boolean;
+  }) => {
     const animVar = direction === 'left' ? leftBtnPush : rightBtnPush;
+
     return (
-      <TouchableOpacity 
+      <TouchableOpacity
         activeOpacity={1}
-        onPress={() => animateButton(animVar, direction === 'left' ? prevItem : nextItem)} 
-        disabled={disabled} 
+        disabled={disabled}
+        onPress={() =>
+          animateButton(animVar, direction === 'left' ? prevItem : nextItem)
+        }
         style={[styles.arrow3DContainer, disabled && { opacity: 0.3 }]}
       >
         <View style={styles.arrow3DShadow} />
-        <Animated.View style={[styles.arrow3DFace, { transform: [{ translateY: animVar }] }]}>
-          {direction === 'left' ? 
-            <ArrowLeft color="#7B5231" size={32} strokeWidth={4} /> : 
+        <Animated.View
+          style={[styles.arrow3DFace, { transform: [{ translateY: animVar }] }]}
+        >
+          {direction === 'left' ? (
+            <ArrowLeft color="#7B5231" size={32} strokeWidth={4} />
+          ) : (
             <ArrowRight color="#7B5231" size={32} strokeWidth={4} />
-          }
+          )}
         </Animated.View>
       </TouchableOpacity>
     );
   };
 
+  /* ───────────────────────────────
+     UI
+  ─────────────────────────────── */
   return (
-    <View style={styles.container}>
-      <ImageBackground 
-        source={{ uri: 'https://i.imgur.com/your_landscape_bg.png' }} 
+    <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
+      <ImageBackground
+        source={{ uri: 'https://i.imgur.com/your_landscape_bg.png' }}
         style={styles.backgroundImage}
-        resizeMode="cover"
       >
         <SafeAreaView style={styles.overlay}>
-         <View style={styles.header}>
-        
-
-            <TouchableOpacity style={styles.exitBtn} onPress={() => setQuitModalVisible(true)}>
-              <X color="white" strokeWidth={5} size={24} />
+          <View style={styles.header}>
+            <TouchableOpacity style={styles.exitBtn} onPress={handleQuit}>
+              <X color="white" size={24} strokeWidth={5} />
             </TouchableOpacity>
           </View>
 
           <View style={styles.content}>
             <NavButton direction="left" disabled={currentIndex === 0} />
-            
+
             <View style={styles.animalContainer}>
-              <Pressable 
+              <Pressable
                 onPress={() => {
                   bounceAnimal();
                   playSound(currentItem._id);
@@ -171,10 +232,10 @@ const AnimalSoundScreen = () => {
                     <Text style={styles.emojiText}>{currentItem.imageUrl}</Text>
                   ) : (
                     <Image
-                      source={{ 
-                        uri: currentItem.imageUrl.startsWith('http') 
-                          ? currentItem.imageUrl 
-                          : `${BASE_URL}/${currentItem.imageUrl}` 
+                      source={{
+                        uri: currentItem.imageUrl.startsWith('http')
+                          ? currentItem.imageUrl
+                          : `${BASE_URL}/${currentItem.imageUrl}`,
                       }}
                       style={styles.animalImage}
                       resizeMode="contain"
@@ -184,7 +245,9 @@ const AnimalSoundScreen = () => {
               </Pressable>
 
               <View style={styles.titleBottomWrapper}>
-                <Text style={styles.titleBottomText}>{currentItem.title.toUpperCase()}</Text>
+                <Text style={styles.titleBottomText}>
+                  {currentItem.title.toUpperCase()}
+                </Text>
               </View>
             </View>
 
@@ -192,57 +255,69 @@ const AnimalSoundScreen = () => {
           </View>
         </SafeAreaView>
       </ImageBackground>
-
-      <Modal transparent visible={isQuitModalVisible} animationType="fade" onRequestClose={() => setQuitModalVisible(false)}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalBox}>
-            <Text style={styles.modalTitle}>Leave the Safari? 👋</Text>
-            <View style={styles.modalButtons}>
-              <TouchableOpacity 
-                style={[styles.modalBtn, { backgroundColor: '#4CAF50' }]} 
-                onPress={() => setQuitModalVisible(false)}
-              >
-                <Text style={styles.modalBtnText}>STAY</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={[styles.modalBtn, { backgroundColor: '#F44336' }]} 
-                onPress={handleQuit}
-              >
-                <Text style={styles.modalBtnText}>BYE BYE!</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-    </View>
+    </Animated.View>
   );
 };
 
+/* ───────────────────────────────
+   STYLES
+─────────────────────────────── */
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#D0E9AC' },
   backgroundImage: { flex: 1 },
   overlay: { flex: 1, paddingHorizontal: 30 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#D0E9AC' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 15 },
-  headerLeft: { flexDirection: 'row', gap: 12 },
-  roundBtn: { width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: 'white', elevation: 4 },
-  exitBtn: { backgroundColor: '#FF5722', width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: 'white' },
-  content: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
-  animalContainer: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  header: { alignItems: 'flex-end', paddingTop: 15 },
+  exitBtn: {
+    backgroundColor: '#FF5722',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: 'white',
+  },
+  content: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  animalContainer: { flex: 1, alignItems: 'center' },
   animalImage: { width: 300, height: 250 },
-  emojiText: { fontSize: 150, textAlign: 'center' },
+  emojiText: { fontSize: 150 },
   arrow3DContainer: { width: 75, height: 65 },
-  arrow3DShadow: { position: 'absolute', bottom: 0, width: 75, height: 55, backgroundColor: '#7B5231', borderRadius: 18 },
-  arrow3DFace: { width: 75, height: 58, backgroundColor: '#F3D299', borderRadius: 18, borderWidth: 3, borderColor: '#7B5231', justifyContent: 'center', alignItems: 'center' },
-  titleBottomWrapper: { marginTop: 20, backgroundColor: '#FF003C', paddingHorizontal: 50, paddingVertical: 10, borderRadius: 25, borderWidth: 4, borderColor: '#B3002A', elevation: 8 },
-  titleBottomText: { color: 'white', fontSize: 26, fontWeight: '900', letterSpacing: 2, textAlign: 'center' },
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center' },
-  modalBox: { backgroundColor: 'white', padding: 30, borderRadius: 30, alignItems: 'center', width: '50%', borderWidth: 5, borderColor: '#FFB300' },
-  modalTitle: { fontSize: 24, fontWeight: '900', marginBottom: 25, color: '#333' },
-  modalButtons: { flexDirection: 'row', gap: 20 },
-  modalBtn: { paddingHorizontal: 25, paddingVertical: 15, borderRadius: 15, elevation: 5 },
-  modalBtnText: { color: 'white', fontWeight: '900', fontSize: 16 }
+  arrow3DShadow: {
+    position: 'absolute',
+    bottom: 0,
+    width: 75,
+    height: 55,
+    backgroundColor: '#7B5231',
+    borderRadius: 18,
+  },
+  arrow3DFace: {
+    width: 75,
+    height: 58,
+    backgroundColor: '#F3D299',
+    borderRadius: 18,
+    borderWidth: 3,
+    borderColor: '#7B5231',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  titleBottomWrapper: {
+    marginTop: 20,
+    backgroundColor: '#FF003C',
+    paddingHorizontal: 50,
+    paddingVertical: 10,
+    borderRadius: 25,
+  },
+  titleBottomText: {
+    color: 'white',
+    fontSize: 26,
+    fontWeight: '900',
+  },
 });
 
-export default AnimalSoundScreen;
+export default AnimalScreen;

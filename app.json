@@ -1,4 +1,21 @@
 {
-  "name": "Kids",
-  "displayName": "Kids App"
+  "name": "Kindiq",
+  "displayName": "Kindiq Kids Learning",
+  "platforms": ["ios", "android"],
+  "orientation": "landscape",
+  "ios": {
+    "supportsTablet": true,
+    "bundleIdentifier": "com.yourname.kindiq",
+    "orientations": [
+      "LandscapeLeft",
+      "LandscapeRight"
+    ]
+  },
+  "android": {
+    "package": "com.yourname.kindiq",
+    "adaptiveIcon": {
+      "foregroundImage": "./assets/icon.jpg",
+      "backgroundColor": "#ffffff"
+    }
+  }
 }
