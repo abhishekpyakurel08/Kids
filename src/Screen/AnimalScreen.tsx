@@ -16,6 +16,8 @@ import {
 
 import { ArrowLeft, ArrowRight, X } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../navigation/AppNavigator';
 import Sound from 'react-native-sound';
 import Orientation from 'react-native-orientation-locker';
 import Tts from 'react-native-tts';
@@ -28,7 +30,7 @@ const isEmoji = (str: string) =>
   str && str.length <= 4 && !str.includes('/') && !str.startsWith('http');
 
 const AnimalScreen = () => {
-  const navigation = useNavigation();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { items, loading, fetchByType } = useContentStore();
 
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -36,14 +38,33 @@ const AnimalScreen = () => {
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const leftBtnPush = useRef(new Animated.Value(0)).current;
   const rightBtnPush = useRef(new Animated.Value(0)).current;
+  const exitBtnPush = useRef(new Animated.Value(0)).current; // New ref
   const fadeAnim = useRef(new Animated.Value(1)).current;
 
+  const isMounted = useRef(true); // New ref
   const soundCache = useRef<Record<string, Sound>>({});
 
   /* ───────────────────────────────
-     INITIAL SETUP
+     HELPERS
   ─────────────────────────────── */
+  const handleExit = () => {
+    stopAllSounds();
+    Tts.stop();
+    Tts.speak('Bye bye!');
+
+    Animated.sequence([
+      Animated.timing(exitBtnPush, { toValue: 5, duration: 100, useNativeDriver: true }),
+      Animated.timing(exitBtnPush, { toValue: 0, duration: 100, useNativeDriver: true }),
+    ]).start(() => {
+      setTimeout(() => {
+        if (isMounted.current) {
+          navigation.navigate('Home');
+        }
+      }, 800);
+    });
+  };
   useEffect(() => {
+    isMounted.current = true;
     Orientation.lockToLandscape();
     StatusBar.setHidden(true);
     fetchByType('animal', true);
@@ -55,7 +76,7 @@ const AnimalScreen = () => {
     Tts.setDefaultPitch(1.3);
 
     const backAction = () => {
-      handleQuit();
+      handleExit();
       return true; // prevent default
     };
 
@@ -65,9 +86,10 @@ const AnimalScreen = () => {
     );
 
     return () => {
+      isMounted.current = false;
       backHandler.remove();
-      Orientation.unlockAllOrientations();
-      StatusBar.setHidden(false);
+      // Orientation.unlockAllOrientations(); // Removed to prevent conflict with App global lock
+      // StatusBar.setHidden(false); // Removed to keep status bar hidden in Home
 
       Object.values(soundCache.current).forEach(s => s.release());
       Tts.stop();
@@ -134,24 +156,7 @@ const AnimalScreen = () => {
     if (currentIndex > 0) setCurrentIndex(i => i - 1);
   };
 
-  const handleQuit = () => {
-    stopAllSounds();
-    Tts.stop();
 
-    // Fade out screen
-    Animated.timing(fadeAnim, { toValue: 0, duration: 800, useNativeDriver: true }).start();
-
-    // Speak "Bye bye" and exit app safely
-    Tts.speak('Bye bye!', undefined, {
-      onFinish: () => {
-        if (navigation.canGoBack()) {
-          navigation.goBack();
-        } else {
-          BackHandler.exitApp(); // fallback if first screen
-        }
-      },
-    });
-  };
 
   /* ───────────────────────────────
      LOADING
@@ -212,8 +217,12 @@ const AnimalScreen = () => {
       >
         <SafeAreaView style={styles.overlay}>
           <View style={styles.header}>
-            <TouchableOpacity style={styles.exitBtn} onPress={handleQuit}>
-              <X color="white" size={24} strokeWidth={5} />
+            <TouchableOpacity activeOpacity={0.7} onPress={handleExit}>
+              <Animated.View style={{ transform: [{ translateY: exitBtnPush }] }}>
+                <View style={styles.exitBtn}>
+                  <X color="white" size={24} strokeWidth={5} />
+                </View>
+              </Animated.View>
             </TouchableOpacity>
           </View>
 

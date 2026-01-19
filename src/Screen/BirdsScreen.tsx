@@ -35,6 +35,25 @@ const BirdScreen = () => {
   const rightBtnPush = useRef(new Animated.Value(0)).current;
   const exitBtnPush = useRef(new Animated.Value(0)).current;
 
+  /* ───────────────────────────────
+     EXIT
+  ─────────────────────────────── */
+  const handleExit = () => {
+    Tts.stop();
+    Tts.speak('Bye bye!');
+
+    Animated.sequence([
+      Animated.timing(exitBtnPush, { toValue: 5, duration: 100, useNativeDriver: true }),
+      Animated.timing(exitBtnPush, { toValue: 0, duration: 100, useNativeDriver: true }),
+    ]).start(() => {
+      setTimeout(() => {
+        if (isMounted.current) {
+          navigation.goBack();
+        }
+      }, 800);
+    });
+  };
+
   useEffect(() => {
     isMounted.current = true;
     Orientation.lockToLandscape();
@@ -130,24 +149,7 @@ const BirdScreen = () => {
     });
   };
 
-  /* ───────────────────────────────
-     EXIT
-  ─────────────────────────────── */
-  const handleExit = () => {
-    Tts.stop();
-    Tts.speak('Bye bye!');
 
-    Animated.sequence([
-      Animated.timing(exitBtnPush, { toValue: 5, duration: 100, useNativeDriver: true }),
-      Animated.timing(exitBtnPush, { toValue: 0, duration: 100, useNativeDriver: true }),
-    ]).start(() => {
-      setTimeout(() => {
-        if (isMounted.current) {
-          navigation.goBack();
-        }
-      }, 800);
-    });
-  };
 
   /* ───────────────────────────────
      UI

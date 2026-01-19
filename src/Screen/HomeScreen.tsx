@@ -140,14 +140,14 @@ export default function HomeScreen() {
     return (
       <RNAnimated.View
         style={[
-          styles.cardWrapper, 
-          { 
-            width: CARD_WIDTH, 
+          styles.cardWrapper,
+          {
+            width: CARD_WIDTH,
             marginHorizontal: CARD_MARGIN,
             transform: [
               { scale: scaleScroll },
               { rotate: isActive ? rotateWiggle : '0deg' }
-            ] 
+            ]
           }
         ]}
       >
@@ -182,14 +182,12 @@ export default function HomeScreen() {
     RNAnimated.sequence([
       RNAnimated.timing(logoutBounce, { toValue: 1.2, duration: 100, useNativeDriver: true }),
       RNAnimated.timing(logoutBounce, { toValue: 1, duration: 100, useNativeDriver: true }),
-      RNAnimated.timing(fadeAnim, { toValue: 0, duration: 800, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
     ]).start(() => {
       Tts.stop();
-      Tts.speak('Bye Bye', undefined, {
-        onFinish: () => {
-          BackHandler.exitApp(); // Fully exit
-        },
-      });
+      Tts.speak('Bye Bye');
+      setTimeout(() => {
+        BackHandler.exitApp();
+      }, 500);
     });
   };
 
@@ -215,7 +213,7 @@ export default function HomeScreen() {
         <View style={styles.header}>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             {/* Mute Button */}
-            <TouchableOpacity 
+            <TouchableOpacity
               onPress={() => setIsMuted(!isMuted)}
               style={[styles.navBtn, { backgroundColor: '#FF69B4', marginRight: 15 }]}
             >
@@ -223,7 +221,7 @@ export default function HomeScreen() {
             </TouchableOpacity>
 
             {/* Settings Button */}
-            <TouchableOpacity 
+            <TouchableOpacity
               onPress={() => navigation.navigate('Settings')}
               style={[styles.navBtn, { backgroundColor: '#00BFFF', marginRight: 15 }]}
             >
@@ -251,9 +249,9 @@ export default function HomeScreen() {
           showsHorizontalScrollIndicator={false}
           onScroll={onScroll}
           scrollEventThrottle={16}
-          contentContainerStyle={{ 
+          contentContainerStyle={{
             paddingHorizontal: (width - FULL_SIZE) / 2 + CARD_MARGIN,
-            paddingVertical: 20 
+            paddingVertical: 20
           }}
           keyExtractor={(item) => item.key}
           renderItem={({ item, index }) => <Card item={item} index={index} />}
@@ -268,20 +266,20 @@ const styles = StyleSheet.create({
   backgroundContainer: { ...StyleSheet.absoluteFillObject },
   overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.15)' },
   safeArea: { flex: 1 },
-  header: { 
-    flexDirection: 'row', 
-    justifyContent: 'flex-start', 
-    paddingHorizontal: 30, 
-    paddingTop: 20, 
-    zIndex: 10 
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    paddingHorizontal: 30,
+    paddingTop: 20,
+    zIndex: 10
   },
-  navBtn: { 
-    width: 56, 
-    height: 56, 
-    borderRadius: 28, 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    borderWidth: 4, 
+  navBtn: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 4,
     borderColor: 'white',
     elevation: 8,
     shadowColor: '#000',
